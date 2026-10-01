@@ -66,7 +66,9 @@ You need `psql` 16.10 or newer (the dump uses `\restrict`). Homebrew's `postgres
 ```bash
 export RENDER_DB='postgresql://emp_portal:...@...singapore-postgres.render.com/emp_portal'
 
+# Render's database user owns the public schema, so DROP OWNED removes it too.
 psql "$RENDER_DB" -c "DROP OWNED BY CURRENT_USER CASCADE;"
+psql "$RENDER_DB" -c "CREATE SCHEMA IF NOT EXISTS public;"
 gunzip -c database/emp_portal_postgres.sql.gz | psql "$RENDER_DB" -v ON_ERROR_STOP=1
 ```
 

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import environ
 from celery.schedules import crontab
+from corsheaders.defaults import default_headers
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 
@@ -345,6 +346,13 @@ PASSWORD_SIGN_IN_ALLOWED_EMAILS = frozenset(
 # CORS
 # ---------------------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = env("CORS_ALLOWED_ORIGINS")
+# The SPA tags every request with a correlation id (services/api/client.ts) that
+# RequestIDMiddleware adopts. Same-origin deployments never needed this, but
+# where the SPA and the API sit on different hosts (Render) the browser's
+# preflight refuses any header not listed - and with it, every request.
+CORS_ALLOW_HEADERS = (*default_headers, "x-request-id")
+# Lets the SPA read the id the API answered with, to quote it in error messages.
+CORS_EXPOSE_HEADERS = ["X-Request-ID"]
 # Bearer tokens travel in a header; no cookie ever authenticates a request
 # here. Allowing credentials would only widen what a misconfigured origin
 # could do one day, for nothing today.
