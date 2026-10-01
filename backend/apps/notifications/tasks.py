@@ -43,6 +43,8 @@ def send_notification_email(self, notification_id: int) -> str:
         )
     except Exception as exc:  # pragma: no cover - depends on SMTP
         logger.warning("Notification email failed for %s: %s", recipient.email, exc)
+        if self.request.is_eager:
+            return "failed"
         raise self.retry(exc=exc) from exc
 
     notification.emailed_at = timezone.now()
