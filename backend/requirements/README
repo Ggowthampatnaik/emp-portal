@@ -1,0 +1,14 @@
+base.txt / dev.txt / prod.txt  - what the portal needs, as version ranges.
+prod.lock                      - what production actually installs: every
+                                 package pinned to one version with the sha256
+                                 of every distribution file. The Dockerfile
+                                 installs from this with --require-hashes.
+
+Regenerate the lock whenever a range in base.txt or prod.txt changes:
+
+    pip install pip-tools
+    pip-compile --generate-hashes --output-file requirements/prod.lock requirements/prod.txt
+
+Commit the lock with the change that needed it. A build that fails on a hash
+mismatch is the lock doing its job - re-run the command above, do not delete
+the offending lines.

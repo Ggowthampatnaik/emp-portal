@@ -1,0 +1,22 @@
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*:focus-visible {
+  outline: 2px solid #0f9b8e;
+  outline-offset: 2px;
+}
+
+/* Tables and charts scroll inside their own container rather than the page. */
+.scroll-x {
+  overflow-x: auto;
+  max-width: 100%;
+}

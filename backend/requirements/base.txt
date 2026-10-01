@@ -1,0 +1,49 @@
+# ---------------------------------------------------------------------------
+# Core runtime dependencies (Trigyan Employee Management Portal - backend)
+# ---------------------------------------------------------------------------
+Django>=6.0,<6.1
+djangorestframework>=3.16
+djangorestframework-simplejwt>=5.5
+django-cors-headers>=4.7
+django-filter>=25.1
+drf-spectacular>=0.28
+
+# Database
+psycopg[binary]>=3.2
+
+# Image handling for profile photos (required by ImageField)
+Pillow>=11.1
+
+# Payslip PDFs. ReportLab is pure Python; WeasyPrint would pull in Cairo and
+# Pango, which complicates both the Windows dev setup and the container build.
+reportlab>=4.2
+
+# Cache / queue
+redis>=6.0
+django-redis>=6.0
+celery>=5.5
+django-celery-beat>=2.8
+django-celery-results>=2.6
+
+# Microsoft Entra ID / JWT validation
+PyJWT[crypto]>=2.10
+msal>=1.32
+azure-identity>=1.21
+
+# Azure Blob Storage
+django-storages[azure]>=1.14
+azure-storage-blob>=12.25
+
+# Monitoring (Azure Application Insights via OpenTelemetry)
+azure-monitor-opentelemetry>=1.6
+
+# Runtime / config
+django-environ>=0.12
+gunicorn>=23.0
+whitenoise>=6.9
+
+# Holiday calendar import from Word documents
+python-docx>=1.1
+
+# Barcode decoding for asset photos (auto-fills the asset number)
+zxing-cpp>=2.2

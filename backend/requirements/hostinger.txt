@@ -1,0 +1,5 @@
+# Hostinger VPS: production plus the MySQL/MariaDB driver.
+# Building mysqlclient needs the system headers first:
+#   sudo apt install -y pkg-config default-libmysqlclient-dev build-essential python3-dev
+-r prod.txt
+mysqlclient>=2.2.1

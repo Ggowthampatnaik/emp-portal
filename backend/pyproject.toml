@@ -1,0 +1,47 @@
+[project]
+name = "emp-portal-backend"
+version = "1.0.0"
+description = "Trigyan Employee Management Portal - Django REST API"
+requires-python = ">=3.12"
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+extend-exclude = "migrations"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = ["migrations", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "DJ", "C4", "SIM", "RUF"]
+ignore = ["B008", "RUF012"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["apps", "common", "config"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
+ignore_missing_imports = true
+warn_unused_ignores = false
+exclude = ["migrations", ".venv"]
+
+[tool.django-stubs]
+django_settings_module = "config.settings.test"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+python_files = ["test_*.py", "tests.py"]
+testpaths = ["tests", "apps", "common"]
+addopts = "-ra --strict-markers"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.coverage.run]
+source = ["apps", "common"]
+omit = ["*/migrations/*", "*/tests/*", "config/*"]
+
+[tool.coverage.report]
+fail_under = 70
+skip_empty = true

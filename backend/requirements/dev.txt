@@ -1,0 +1,18 @@
+-r base.txt
+
+# Testing
+pytest>=8.3
+pytest-django>=4.10
+pytest-cov>=6.0
+factory-boy>=3.3
+freezegun>=1.5
+# Reads the generated payslip PDFs back, so the tests can assert what is
+# actually printed rather than just that a PDF came out.
+pypdf>=5.1
+
+# Lint / format / types
+ruff>=0.11
+black>=25.1
+mypy>=1.15
+django-stubs[compatible-mypy]>=5.1
+djangorestframework-stubs>=3.15

@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Django
+*.sqlite3
+db.sqlite3
+test_db.sqlite3
+staticfiles/
+media/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Working copy of the database the end-to-end walkthroughs run against
+backend/tests/e2e/.run/
+
+# Written by the always-on scheduled task (tools/install-autostart.ps1).
+logs/
+
+# Database dumps hold real employee data. They are restored from this machine
+# with psql (see DEPLOY_RENDER.md) and never pushed to GitHub.
+database/
