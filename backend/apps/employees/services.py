@@ -97,7 +97,9 @@ def request_account_deletion(employee: Employee, actor, reason: str) -> AccountD
 
 def _load_open(request_id: int) -> AccountDeletionRequest:
     request = (
-        AccountDeletionRequest.objects.select_for_update()
+        # Lock the request row only: requested_by is nullable, an outer join,
+        # and PostgreSQL refuses FOR UPDATE on the nullable side.
+        AccountDeletionRequest.objects.select_for_update(of=("self",))
         .select_related("employee__user", "requested_by")
         .get(pk=request_id)
     )

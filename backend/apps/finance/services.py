@@ -102,7 +102,9 @@ def process_payslip(payslip_id: int, actor, comment: str = "") -> PayslipApprova
 
 def _load_with_finance(approval_id: int) -> PayslipApproval:
     approval = (
-        PayslipApproval.objects.select_for_update()
+        # Lock the approval row only: processed_by is nullable, an outer join,
+        # and PostgreSQL refuses FOR UPDATE on the nullable side.
+        PayslipApproval.objects.select_for_update(of=("self",))
         .select_related("payslip__run", "payslip__employee__user", "processed_by")
         .get(pk=approval_id)
     )

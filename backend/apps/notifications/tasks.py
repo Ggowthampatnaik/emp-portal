@@ -43,6 +43,10 @@ def send_notification_email(self, notification_id: int) -> str:
         )
     except Exception as exc:  # pragma: no cover - depends on SMTP
         logger.warning("Notification email failed for %s: %s", recipient.email, exc)
+        # Without a worker (Render, Hostinger) the task runs inside the request,
+        # and an eager retry runs again at once rather than in a minute - four
+        # SMTP timeouts per recipient, with the user's dialog waiting on all of
+        # them. The in-app notification already exists; give up on the email.
         if self.request.is_eager:
             return "failed"
         raise self.retry(exc=exc) from exc
