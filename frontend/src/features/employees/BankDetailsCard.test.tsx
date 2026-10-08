@@ -6,7 +6,7 @@
  */
 
 import { Provider } from 'react-redux';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -169,5 +169,67 @@ describe('BankDetailsCard', () => {
     await user.clear(screen.getByLabelText(/bank name/i));
 
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it('offers the banks as a searchable list, grouped as the RBI groups them', async () => {
+    const user = userEvent.setup();
+    bankAccount.mockImplementation(notFound);
+    renderCard({ isOwner: true });
+
+    await user.click(await screen.findByRole('button', { name: 'Add' }));
+    const bank = screen.getByRole('combobox', { name: /bank name/i });
+    await user.type(bank, 'state bank');
+
+    const list = await screen.findByRole('listbox');
+    expect(within(list).getByText('Public sector banks')).toBeInTheDocument();
+    await user.click(within(list).getByRole('option', { name: 'State Bank of India' }));
+    expect(bank).toHaveValue('State Bank of India');
+    expect(screen.queryByLabelText(/name of your bank/i)).not.toBeInTheDocument();
+  });
+
+  it('takes a typed name when the bank is not listed', async () => {
+    const user = userEvent.setup();
+    bankAccount.mockImplementation(notFound);
+    saveBankAccount.mockResolvedValue(FULL);
+    renderCard({ isOwner: true });
+
+    await user.click(await screen.findByRole('button', { name: 'Add' }));
+    await user.click(screen.getByRole('combobox', { name: /bank name/i }));
+    await user.click(await screen.findByRole('option', { name: 'Other bank' }));
+    await user.type(screen.getByLabelText(/name of your bank/i), 'Mahesh Sahakari Bank');
+    await user.type(screen.getByLabelText(/^account number/i), '50100234567788');
+    await user.type(screen.getByLabelText(/ifsc code/i), 'APMC0000001');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(saveBankAccount).toHaveBeenCalledWith(
+      10,
+      expect.objectContaining({ bank_name: 'Mahesh Sahakari Bank' }),
+    );
+  });
+
+  it('shows an account saved with an unlisted bank under "Other bank"', async () => {
+    const user = userEvent.setup();
+    bankAccount.mockResolvedValue({ ...FULL, bank_name: 'Mahesh Sahakari Bank' });
+    renderCard({ isOwner: true });
+
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+
+    expect(screen.getByRole('combobox', { name: /bank name/i })).toHaveValue('Other bank');
+    expect(screen.getByLabelText(/name of your bank/i)).toHaveValue('Mahesh Sahakari Bank');
+  });
+
+  it('no longer asks for, or shows, an account type', async () => {
+    const user = userEvent.setup();
+    bankAccount.mockResolvedValue(FULL);
+    saveBankAccount.mockResolvedValue(FULL);
+    renderCard({ isOwner: true });
+
+    expect(await screen.findByText('HDFC Bank')).toBeInTheDocument();
+    expect(screen.queryByText(/account type/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(screen.queryByLabelText(/account type/i)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(saveBankAccount.mock.calls[0]![1]).not.toHaveProperty('account_type');
   });
 });

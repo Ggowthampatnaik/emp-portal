@@ -46,6 +46,7 @@ const SUMMARY: DashboardSummary = {
   as_of: '2026-09-07',
   horizon_days: 30,
   upcoming_birthdays: [],
+  upcoming_anniversaries: [],
   upcoming_holidays: [],
   me: {
     leave_entitled: '38.0',

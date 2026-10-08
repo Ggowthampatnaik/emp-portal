@@ -20,8 +20,21 @@ from apps.employees.models import (
 )
 from apps.employees.photo import ALLOWED_CONTENT_TYPES as ALLOWED_PHOTO_TYPES
 from apps.employees.photo import MAX_PHOTO_BYTES
+from common.address import StructuredAddressMixin
 from common.enums import EmploymentStatus, RoleSlug
 from common.media import media_url
+from common.phone import PhoneNumberField
+
+
+def mobile_field() -> PhoneNumberField:
+    """The employee's own number: a mobile, validated per country, stored as E.164."""
+    return PhoneNumberField(mobile=True, required=False, allow_blank=True)
+
+
+def contact_phone_field() -> PhoneNumberField:
+    """An emergency contact's number: mobile or landline, validated the same way."""
+    return PhoneNumberField(mobile=False, required=False, allow_blank=True)
+
 
 #: Certificates and letters are text; anything larger is a scan nobody needs
 #: at that resolution, and storage is per-tenant.
@@ -407,9 +420,11 @@ class EmployeeAssetSerializer(serializers.ModelSerializer):
         return asset
 
 
-class EmployeeDetailSerializer(serializers.ModelSerializer):
+class EmployeeDetailSerializer(StructuredAddressMixin, serializers.ModelSerializer):
     """Full profile, including the nested user identity and documents."""
 
+    phone = mobile_field()
+    emergency_contact_phone = contact_phone_field()
     full_name = serializers.CharField(read_only=True)
     email = serializers.EmailField(source="user.email", read_only=True)
     first_name = serializers.CharField(source="user.first_name")
@@ -451,6 +466,8 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
             "photo_url",
             "permanent_address",
             "current_address",
+            "permanent_address_detail",
+            "current_address_detail",
             "emergency_contact_name",
             "emergency_contact_phone",
             "work_location",
@@ -505,6 +522,9 @@ class EmployeeCreateSerializer(serializers.ModelSerializer):
     HR sets a temporary password; ``must_change_password`` forces a reset on
     first sign-in.
     """
+
+    phone = mobile_field()
+    emergency_contact_phone = contact_phone_field()
 
     # These live on the User, not the Employee, so they are write-only here and
     # the response is rendered by EmployeeDetailSerializer instead.
@@ -664,6 +684,36 @@ class EmployeeSkillWriteSerializer(serializers.Serializer):
     )
 
 
+class DirectReportsSetSerializer(serializers.Serializer):
+    """The complete list of people who report to one employee.
+
+    Sent whole: everyone listed reports to this employee afterwards, and anyone
+    who did and is no longer listed is left without a manager.
+    """
+
+    employee_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1), allow_empty=True, max_length=500
+    )
+
+    def validate_employee_ids(self, value: list[int]) -> list[int]:
+        ids = list(dict.fromkeys(value))  # keep order, drop repeats
+        manager: Employee = self.context["manager"]
+        found = set(Employee.objects.filter(pk__in=ids).values_list("pk", flat=True))
+        unknown = [pk for pk in ids if pk not in found]
+        if unknown:
+            raise serializers.ValidationError(f"No such employee: {unknown[0]}.")
+        if manager.pk in ids:
+            raise serializers.ValidationError("An employee cannot report to themselves.")
+        above = manager.ancestor_ids() & set(ids)
+        if above:
+            name = Employee.objects.select_related("user").get(pk=next(iter(above))).full_name
+            raise serializers.ValidationError(
+                f"{name} is above {manager.full_name} in the reporting line, "
+                "so cannot also report to them."
+            )
+        return ids
+
+
 class EmployeeSkillSetSerializer(serializers.Serializer):
     skills = EmployeeSkillWriteSerializer(many=True)
 
@@ -816,7 +866,10 @@ class ExperienceSetSerializer(serializers.Serializer):
     experience = ExperienceDetailSerializer(many=True)
 
 
-class ProfileDraftSerializer(serializers.ModelSerializer):
+ADDRESS_DETAIL_FIELDS = ("permanent_address_detail", "current_address_detail")
+
+
+class ProfileDraftSerializer(StructuredAddressMixin, serializers.ModelSerializer):
     """A partial save of the complete-profile form.
 
     Somebody filling the wizard has to be able to leave halfway without losing
@@ -825,13 +878,16 @@ class ProfileDraftSerializer(serializers.ModelSerializer):
     saved a phone number the final submit would reject helps nobody.
     """
 
+    phone = mobile_field()
+    emergency_contact_phone = contact_phone_field()
+
     class Meta:
         model = Employee
-        fields = MANDATORY_PROFILE_FIELDS
+        fields = (*MANDATORY_PROFILE_FIELDS, *ADDRESS_DETAIL_FIELDS)
         extra_kwargs = {name: {"required": False} for name in MANDATORY_PROFILE_FIELDS}
 
 
-class CompleteProfileSerializer(serializers.ModelSerializer):
+class CompleteProfileSerializer(StructuredAddressMixin, serializers.ModelSerializer):
     """The first thing a new employee ever fills in (F18).
 
     Every field here is mandatory: the flag flips only when the whole set is
@@ -840,19 +896,31 @@ class CompleteProfileSerializer(serializers.ModelSerializer):
     experience - belongs on My Profile afterwards, not in the way of getting in.
     """
 
+    phone = mobile_field()
+    emergency_contact_phone = contact_phone_field()
+
     class Meta:
         model = Employee
-        fields = MANDATORY_PROFILE_FIELDS
+        fields = (*MANDATORY_PROFILE_FIELDS, *ADDRESS_DETAIL_FIELDS)
+
+    #: Each address may come as its parts or as text; the check below needs one.
+    EITHER_FORM = ("permanent_address", "current_address", *ADDRESS_DETAIL_FIELDS)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for name, field in self.fields.items():
+            if name in self.EITHER_FORM:
+                field.required = False
+                continue
             field.required = True
             field.allow_blank = getattr(field, "allow_blank", None) and False
             if name == "date_of_birth":
                 field.allow_null = False
 
     def validate(self, attrs: dict) -> dict:
+        # The mixin turns address parts into the text of record first, so an
+        # address given either way counts as given.
+        attrs = super().validate(attrs)
         missing = [name for name in MANDATORY_PROFILE_FIELDS if not attrs.get(name)]
         if missing:
             raise serializers.ValidationError(

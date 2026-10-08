@@ -39,7 +39,7 @@ import Typography from '@mui/material/Typography';
 import { Fragment, useCallback, useState } from 'react';
 
 import { useAppDispatch } from '@/app/hooks';
-import { EmptyState, ErrorAlert } from '@/components/common/Feedback';
+import { EmptyState, ErrorAlert, TableSkeleton } from '@/components/common/Feedback';
 import { showToast } from '@/features/ui/uiSlice';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useApiAction, useApiResource } from '@/hooks/useApiResource';
@@ -153,7 +153,7 @@ export default function PayrollRunsTab() {
     }
   };
 
-  if (loading) return <LinearProgress />;
+  if (loading) return <TableSkeleton rows={6} columns={7} />;
   if (error) return <ErrorAlert error={error} onRetry={reload} />;
 
   return (
@@ -191,7 +191,7 @@ export default function PayrollRunsTab() {
                 <TableCell align="right">Employees</TableCell>
                 <TableCell align="right">Gross</TableCell>
                 <TableCell align="right">Deductions</TableCell>
-                <TableCell align="right">Net</TableCell>
+                <TableCell sx={{ pl: 4 }}>Net</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -235,7 +235,7 @@ export default function PayrollRunsTab() {
                     <TableCell align="right">{run.employee_count || '-'}</TableCell>
                     <TableCell align="right">{money(run.total_gross)}</TableCell>
                     <TableCell align="right">{money(run.total_deductions)}</TableCell>
-                    <TableCell align="right">
+                    <TableCell sx={{ pl: 4 }}>
                       <strong>{money(run.total_net)}</strong>
                     </TableCell>
                     <TableCell align="right">

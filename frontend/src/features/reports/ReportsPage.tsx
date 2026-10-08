@@ -12,7 +12,6 @@
 import DownloadIcon from '@mui/icons-material/Download';
 import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
-import LinearProgress from '@mui/material/LinearProgress';
 import Stack from '@mui/material/Stack';
 import Tab from '@mui/material/Tab';
 import Table from '@mui/material/Table';
@@ -34,7 +33,7 @@ import {
   ProjectsChart,
   TimesheetChart,
 } from '@/components/charts/ReportCharts';
-import { EmptyState, ErrorAlert } from '@/components/common/Feedback';
+import { EmptyState, ErrorAlert, TableSkeleton } from '@/components/common/Feedback';
 import PageHeader from '@/components/common/PageHeader';
 import { showToast } from '@/features/ui/uiSlice';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -222,7 +221,7 @@ function ReportTab({ spec }: { spec: ReportSpec }) {
 
       {error && <ErrorAlert error={error} onRetry={reload} />}
       {loading ? (
-        <LinearProgress />
+        <TableSkeleton rows={6} columns={5} />
       ) : rows.length === 0 ? (
         <EmptyState
           title="No data for this report"

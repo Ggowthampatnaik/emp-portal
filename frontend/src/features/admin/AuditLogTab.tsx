@@ -15,7 +15,6 @@ import SearchIcon from '@mui/icons-material/Search';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import InputAdornment from '@mui/material/InputAdornment';
-import LinearProgress from '@mui/material/LinearProgress';
 import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
 import Table from '@mui/material/Table';
@@ -29,7 +28,7 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { useCallback, useEffect, useState } from 'react';
 
-import { EmptyState, ErrorAlert } from '@/components/common/Feedback';
+import { EmptyState, ErrorAlert, TableSkeleton } from '@/components/common/Feedback';
 import AuditLogEntryDialog from '@/features/admin/AuditLogEntryDialog';
 import { useApiResource } from '@/hooks/useApiResource';
 import type { AuditLogEntry } from '@/types/domain';
@@ -132,7 +131,7 @@ export default function AuditLogTab() {
       </Stack>
 
       {error && <ErrorAlert error={error} onRetry={reload} />}
-      {loading && <LinearProgress sx={{ mb: 2 }} />}
+      {loading && <TableSkeleton rows={6} columns={5} />}
 
       {!loading && rows.length === 0 ? (
         <EmptyState

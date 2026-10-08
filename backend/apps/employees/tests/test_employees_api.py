@@ -78,7 +78,7 @@ def test_an_employee_may_update_their_contact_details(auth_client, org):
         },
     )
     assert response.status_code == 200, response.data
-    assert response.data["phone"] == "+91 90000 11111"
+    assert response.data["phone"] == "+919000011111"  # stored as E.164
     assert response.data["permanent_address"] == "12 Jubilee Hills, Hyderabad"
     assert response.data["current_address"] == "4B Koramangala, Bengaluru"
 

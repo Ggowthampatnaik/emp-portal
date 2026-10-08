@@ -8,6 +8,7 @@
 
 import type { ApprovalStatus, LeaveStageStatus, LeaveStatus } from './api';
 import type { RoleSlug } from './auth';
+import type { AddressDetail } from '@/utils/address';
 
 export type EmploymentStatus = 'active' | 'on_notice' | 'inactive';
 
@@ -119,6 +120,9 @@ export interface EmployeeDetail extends Omit<EmployeeListItem, 'full_name'> {
   blood_group: BloodGroup | '';
   permanent_address: string;
   current_address: string;
+  /** The parts each address was entered as; empty for one typed before they existed. */
+  permanent_address_detail: Partial<AddressDetail>;
+  current_address_detail: Partial<AddressDetail>;
   emergency_contact_name: string;
   emergency_contact_phone: string;
   /** False until the Complete Profile wizard is finished (F18). */
@@ -480,7 +484,6 @@ export interface BankAccountPayload {
   branch_name: string;
   account_number: string;
   ifsc_code: string;
-  account_type: string;
 }
 
 export type SkillCategory =
@@ -762,6 +765,24 @@ export interface UpcomingBirthday {
   is_today: boolean;
 }
 
+/** A work anniversary: the day and month someone joined, and the years they complete. */
+export interface UpcomingAnniversary {
+  id: number;
+  employee_code: string;
+  full_name: string;
+  department_name: string | null;
+  designation_name: string | null;
+  photo_url: string | null;
+  date_of_joining: string;
+  /** Years completed on this anniversary - always 1 or more. */
+  years: number;
+  day: number;
+  month: number;
+  celebrated_on: string;
+  days_until: number;
+  is_today: boolean;
+}
+
 export interface UpcomingHoliday {
   id: number;
   date: string;
@@ -777,6 +798,7 @@ export interface DashboardSummary {
   as_of: string;
   horizon_days: number;
   upcoming_birthdays: UpcomingBirthday[];
+  upcoming_anniversaries: UpcomingAnniversary[];
   upcoming_holidays: UpcomingHoliday[];
   me?: {
     leave_entitled: string;

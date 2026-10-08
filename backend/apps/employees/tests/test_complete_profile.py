@@ -141,7 +141,7 @@ def test_what_was_typed_is_what_is_saved(auth_client, newcomer):
     auth_client(newcomer).post(COMPLETE.format(pk=newcomer.pk), FULL_PROFILE, format="json")
 
     newcomer.refresh_from_db()
-    assert newcomer.phone == FULL_PROFILE["phone"]
+    assert newcomer.phone == "+919876543210"
     assert str(newcomer.date_of_birth) == FULL_PROFILE["date_of_birth"]
     assert newcomer.blood_group == "O+"
     assert newcomer.emergency_contact_name == "Rekha Rao"
@@ -197,7 +197,7 @@ def test_submitting_again_is_harmless(auth_client, newcomer):
 
     assert again.status_code == 200
     newcomer.refresh_from_db()
-    assert newcomer.phone == "+91 90000 00000"
+    assert newcomer.phone == "+919000000000"
 
 
 # ---------------------------------------------------------------------------
@@ -326,3 +326,125 @@ def test_the_old_document_types_still_work():
 
     values = set(EmployeeDocument.DocumentType.values)
     assert {"id_proof", "address_proof", "education", "experience", "contract", "other"} <= values
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("days_ahead", [1, 365])
+def test_a_date_of_birth_in_the_future_is_refused(auth_client, newcomer, days_ahead):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    client = auth_client(newcomer)
+    future = (timezone.localdate() + timedelta(days=days_ahead)).isoformat()
+
+    response = client.post(
+        COMPLETE.format(pk=newcomer.pk), {**FULL_PROFILE, "date_of_birth": future}, format="json"
+    )
+
+    assert response.status_code == 400
+    assert "cannot be in the future" in str(response.data)
+    newcomer.refresh_from_db()
+    assert newcomer.profile_completed is False
+
+
+@pytest.mark.django_db
+def test_a_past_date_of_birth_is_accepted(auth_client, newcomer):
+    client = auth_client(newcomer)
+
+    response = client.post(
+        COMPLETE.format(pk=newcomer.pk),
+        {**FULL_PROFILE, "date_of_birth": "1996-04-12"},
+        format="json",
+    )
+
+    assert response.status_code == 200, response.data
+
+
+@pytest.mark.django_db
+def test_transgender_is_a_gender_that_can_be_chosen(auth_client, newcomer):
+    client = auth_client(newcomer)
+
+    response = client.post(
+        COMPLETE.format(pk=newcomer.pk), {**FULL_PROFILE, "gender": "transgender"}, format="json"
+    )
+
+    assert response.status_code == 200, response.data
+    newcomer.refresh_from_db()
+    assert newcomer.gender == "transgender"
+    assert newcomer.get_gender_display() == "Transgender"
+
+
+ADDRESS = {
+    "country": "IN",
+    "pincode": "500081",
+    "line1": "Plot 12, Cyber Towers",
+    "line2": "Madhapur",
+    "landmark": "",
+    "city": "Hyderabad",
+    "state": "Telangana",
+}
+
+
+@pytest.mark.django_db
+def test_addresses_can_be_given_field_by_field(auth_client, newcomer):
+    client = auth_client(newcomer)
+    body = {
+        **{k: v for k, v in FULL_PROFILE.items() if not k.endswith("_address")},
+        "permanent_address_detail": ADDRESS,
+        "current_address_detail": {**ADDRESS, "line1": "Flat 2C, Lake View", "pincode": "500032"},
+    }
+
+    response = client.post(COMPLETE.format(pk=newcomer.pk), body, format="json")
+
+    assert response.status_code == 200, response.data
+    newcomer.refresh_from_db()
+    assert newcomer.profile_completed is True
+    # The line of record is built from the parts, and the parts are kept.
+    assert newcomer.permanent_address == (
+        "Plot 12, Cyber Towers, Madhapur, Hyderabad, Telangana 500081, India"
+    )
+    assert newcomer.permanent_address_detail["pincode"] == "500081"
+    assert response.data["current_address_detail"]["line1"] == "Flat 2C, Lake View"
+
+
+@pytest.mark.django_db
+def test_a_wrong_pin_code_keeps_the_portal_shut(auth_client, newcomer):
+    client = auth_client(newcomer)
+    body = {
+        **{k: v for k, v in FULL_PROFILE.items() if not k.endswith("_address")},
+        "permanent_address_detail": {**ADDRESS, "pincode": "12345"},
+        "current_address_detail": ADDRESS,
+    }
+
+    response = client.post(COMPLETE.format(pk=newcomer.pk), body, format="json")
+
+    assert response.status_code == 400
+    assert "6-digit PIN code" in str(response.data)
+    newcomer.refresh_from_db()
+    assert newcomer.profile_completed is False
+
+
+@pytest.mark.django_db
+def test_a_draft_may_hold_half_an_address(auth_client, newcomer):
+    client = auth_client(newcomer)
+
+    response = client.post(
+        f"/api/v1/employees/{newcomer.pk}/profile-draft/",
+        {"permanent_address_detail": {"country": "IN", "line1": "Plot 12", "city": "Hyderabad"}},
+        format="json",
+    )
+
+    assert response.status_code == 200, response.data
+    assert response.data["permanent_address_detail"]["line1"] == "Plot 12"
+    assert response.data["permanent_address_detail"]["pincode"] == ""
+
+
+@pytest.mark.django_db
+def test_other_is_no_longer_a_gender_option(auth_client, newcomer):
+    response = auth_client(newcomer).post(
+        COMPLETE.format(pk=newcomer.pk), {**FULL_PROFILE, "gender": "other"}, format="json"
+    )
+
+    assert response.status_code == 400
+    assert "gender" in str(response.data)

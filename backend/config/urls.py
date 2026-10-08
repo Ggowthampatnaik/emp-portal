@@ -13,7 +13,13 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
-from common.views import HealthCheckView, api_not_found, api_server_error, signed_media
+from common.views import (
+    HealthCheckView,
+    PincodeLookupView,
+    api_not_found,
+    api_server_error,
+    signed_media,
+)
 
 api_v1_patterns = [
     path("auth/", include("apps.authentication.urls")),
@@ -26,6 +32,7 @@ api_v1_patterns = [
     path("", include("apps.notifications.urls")),
     path("", include("apps.reports.urls")),
     path("", include("apps.administration.urls")),
+    path("pincodes/<str:pincode>/", PincodeLookupView.as_view(), name="pincode-lookup"),
 ]
 
 # Branding for the maintenance admin (the portal itself is the primary UI).

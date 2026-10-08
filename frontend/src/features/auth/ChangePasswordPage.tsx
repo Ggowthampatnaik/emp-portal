@@ -32,6 +32,8 @@ import { selectCurrentUser, signedOutLocally } from '@/features/auth/authSlice';
 import { useApiAction } from '@/hooks/useApiResource';
 import { authService } from '@/services/auth/authService';
 import { showToast } from '@/features/ui/uiSlice';
+import { BRAND_BACKDROP, SLATE } from '@/styles/theme';
+import { describeMissing, meetsPasswordRules, PASSWORD_HINT } from '@/utils/passwordRules';
 
 export default function ChangePasswordPage() {
   const dispatch = useAppDispatch();
@@ -56,8 +58,15 @@ export default function ChangePasswordPage() {
     return true as const;
   });
 
+  const rulesMet = meetsPasswordRules(next);
+  // Nothing typed yet: the rule. Typed but short of it: only what is missing.
+  const stillMissing = next ? describeMissing(next) : null;
+  // Said as soon as the second box holds something different, not only on submit.
+  const confirmDiffers = confirm.length > 0 && confirm !== next;
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    if (!rulesMet) return;
     if (next !== confirm) {
       setMismatch(true);
       return;
@@ -76,25 +85,45 @@ export default function ChangePasswordPage() {
 
   const body = (
     <>
-      {activating ? (
-        <Box sx={{ mb: 3 }}>
-          <LogoLockup size={56} align="center" />
-          <Typography variant="h3" component="h1" sx={{ mt: 3 }}>
-            Set your password
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
-            Your account uses a temporary password. Choose a new one to continue.
-          </Typography>
-        </Box>
-      ) : (
+      {!activating && (
         <PageHeader
           title="Change password"
           subtitle="Choose a new password for your account."
         />
       )}
 
-      <Card sx={{ maxWidth: 520, width: '100%' }}>
-        <CardContent sx={{ p: 3 }}>
+      <Card
+        sx={
+          activating
+            ? {
+                // The sign-in card's dress, since this is the next room along.
+                maxWidth: 520,
+                width: '100%',
+                border: 'none',
+                backgroundColor: (theme) =>
+                  theme.palette.mode === 'light'
+                    ? 'rgba(255,255,255,0.97)'
+                    : 'rgba(24,33,47,0.95)',
+                backdropFilter: 'blur(6px)',
+                boxShadow: '0 24px 60px rgba(15,30,55,0.35)',
+              }
+            : { maxWidth: 520, width: '100%' }
+        }
+      >
+        <CardContent sx={{ p: activating ? 4 : 3 }}>
+          {/* Inside the card while onboarding: on the dark backdrop, a heading
+              outside it would be dark text on a dark ground. */}
+          {activating && (
+            <Box sx={{ mb: 3 }}>
+              <LogoLockup size={56} align="center" />
+              <Typography variant="h3" component="h1" sx={{ mt: 3 }}>
+                Set your password
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                Your account uses a temporary password. Choose a new one to continue.
+              </Typography>
+            </Box>
+          )}
           <Stack component="form" onSubmit={handleSubmit} spacing={2} noValidate>
             {activating && (
               <Alert severity="info">
@@ -134,11 +163,10 @@ export default function ChangePasswordPage() {
               type="password"
               value={next}
               onChange={(event) => setNext(event.target.value)}
-              error={Boolean(action.fieldErrors.new_password)}
-              helperText={
-                action.fieldErrors.new_password ??
-                'At least 8 characters, not entirely numeric, not a common password.'
-              }
+              error={Boolean(action.fieldErrors.new_password || stillMissing)}
+              // The server's word wins: it also refuses a common password, one
+              // too like your name, or the current one again.
+              helperText={action.fieldErrors.new_password ?? stillMissing ?? PASSWORD_HINT}
               autoComplete="new-password"
               required
               fullWidth
@@ -148,15 +176,19 @@ export default function ChangePasswordPage() {
               type="password"
               value={confirm}
               onChange={(event) => setConfirm(event.target.value)}
-              error={mismatch}
-              helperText={mismatch ? 'The two passwords do not match.' : ' '}
+              error={mismatch || confirmDiffers}
+              helperText={mismatch || confirmDiffers ? 'The two passwords do not match.' : ' '}
               autoComplete="new-password"
               required
               fullWidth
             />
 
             <Stack direction="row" spacing={1}>
-              <Button type="submit" variant="contained" disabled={action.busy}>
+              <Button
+                type="submit"
+                variant="contained"
+                disabled={action.busy || !rulesMet || !confirm || confirmDiffers}
+              >
                 {action.busy ? 'Saving...' : activating ? 'Set password' : 'Change password'}
               </Button>
               {!activating && (
@@ -179,7 +211,8 @@ export default function ChangePasswordPage() {
   if (!activating) return body;
 
   // Mid-onboarding the layout shows no sidebar or topbar, so this page sets
-  // its own stage - centred, like the login card that led here.
+  // its own stage - centred on the sign-in page's backdrop, so stepping from
+  // one to the other reads as one front door.
   return (
     <Box
       sx={{
@@ -187,7 +220,8 @@ export default function ChangePasswordPage() {
         display: 'grid',
         placeItems: 'center',
         p: 2,
-        bgcolor: 'background.default',
+        backgroundColor: SLATE.groundDark,
+        backgroundImage: BRAND_BACKDROP,
       }}
     >
       <Box sx={{ width: '100%', maxWidth: 520 }}>{body}</Box>

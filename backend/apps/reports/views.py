@@ -22,15 +22,18 @@ from apps.employees.models import Department, Employee
 from apps.leave_management.models import LeaveRequest
 from apps.projects.models import Project, ProjectAllocation
 from apps.reports.serializers import (
+    AnniversaryCalendarSerializer,
     BirthdayCalendarSerializer,
     DashboardSummarySerializer,
     ReportResponseSerializer,
 )
 from apps.reports.upcoming import (
+    DASHBOARD_ANNIVERSARY_LIMIT,
     DASHBOARD_BIRTHDAY_LIMIT,
     DASHBOARD_HOLIDAY_LIMIT,
     NOTICEBOARD_HORIZON_DAYS,
     clamp_horizon,
+    upcoming_anniversaries,
     upcoming_birthdays,
     upcoming_holidays,
 )
@@ -211,7 +214,7 @@ class LeaveReportView(BaseReportView):
             {
                 "employee_code": row["employee__employee_code"],
                 "employee": (
-                    f"{row['employee__user__first_name']} " f"{row['employee__user__last_name']}"
+                    f"{row['employee__user__first_name']} {row['employee__user__last_name']}"
                 ).strip(),
                 "department": row["employee__department__name"] or "",
                 "leave_type": row["leave_type__name"],
@@ -363,6 +366,28 @@ class BirthdayCalendarView(APIView):
         return Response({"count": len(rows), "results": rows})
 
 
+class AnniversaryCalendarView(APIView):
+    """The whole year of work anniversaries, behind the dashboard card.
+
+    Company-wide and the same for every role, like the birthday calendar
+    beside it.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        description="Every active employee's work anniversary over the next year, soonest first.",
+        responses={200: AnniversaryCalendarSerializer},
+    )
+    def get(self, request: Request) -> Response:
+        rows = upcoming_anniversaries(
+            request,
+            horizon_days=365,
+            limit=Employee.objects.count() + 1,
+        )
+        return Response({"count": len(rows), "results": rows})
+
+
 class DashboardSummaryView(APIView):
     """Role-aware numbers for the dashboard cards - one request, no N+1."""
 
@@ -397,6 +422,11 @@ class DashboardSummaryView(APIView):
             "upcoming_birthdays": upcoming_birthdays(
                 request,
                 limit=DASHBOARD_BIRTHDAY_LIMIT,
+                horizon_days=NOTICEBOARD_HORIZON_DAYS,
+            ),
+            "upcoming_anniversaries": upcoming_anniversaries(
+                request,
+                limit=DASHBOARD_ANNIVERSARY_LIMIT,
                 horizon_days=NOTICEBOARD_HORIZON_DAYS,
             ),
             "upcoming_holidays": upcoming_holidays(

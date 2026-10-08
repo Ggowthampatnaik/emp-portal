@@ -133,6 +133,8 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+    # Upper case, lower case, a number and a symbol - see common/password_validation.py.
+    {"NAME": "common.password_validation.CharacterClassValidator"},
 ]
 
 # ---------------------------------------------------------------------------
@@ -231,7 +233,7 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "common.exceptions.api_exception_handler",
     "DEFAULT_RENDERER_CLASSES": ("rest_framework.renderers.JSONRenderer",),
     "DEFAULT_THROTTLE_CLASSES": ("rest_framework.throttling.ScopedRateThrottle",),
-    "DEFAULT_THROTTLE_RATES": {"login": "10/min", "reports": "30/min"},
+    "DEFAULT_THROTTLE_RATES": {"login": "10/min", "reports": "30/min", "pincode": "30/min"},
     # How many proxies sit in front of the app and append to X-Forwarded-For.
     # Zero means the header is ignored: it is written by the client, and a
     # throttle keyed on it can be reset by changing a request header. See the
@@ -242,6 +244,13 @@ REST_FRAMEWORK = {
 
 # Read by the request middleware for the audit trail; DRF reads its copy above.
 TRUSTED_PROXY_HOPS = REST_FRAMEWORK["NUM_PROXIES"]
+
+#: Indian PIN code lookup for the address form (common/pincode.py). India
+#: Post's directory, via api.postalpincode.in - free and keyless.
+PINCODE_LOOKUP_URL = env(
+    "PINCODE_LOOKUP_URL", default="https://api.postalpincode.in/pincode/{pincode}"
+)
+PINCODE_LOOKUP_TIMEOUT = env.float("PINCODE_LOOKUP_TIMEOUT", default=5.0)
 
 #: How long a temporary password stays usable (F17 / decision D8).
 PASSWORD_RESET_MINUTES = env.int("PASSWORD_RESET_MINUTES", default=30)

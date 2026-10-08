@@ -1,11 +1,12 @@
 /**
- * The dashboard noticeboard: upcoming birthdays and company holidays.
+ * The dashboard noticeboard: upcoming birthdays, work anniversaries and company
+ * holidays.
  *
  * Company-wide and identical for every role, so it renders from the shared
  * dashboard summary rather than fetching anything of its own. Birthdays carry
  * day and month only — the API never sends a birth year.
  *
- * The two cards are a matched pair, and four things keep them that way: the
+ * The cards are a matched set, and four things keep them that way: the
  * same window (the next 30 days, scoped on the server), the
  * same row cap, the same frame (`SectionCard`, which fills its grid cell so
  * both cards are one height and pins the footer so both "View more" links sit
@@ -15,6 +16,7 @@
 
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import CakeIcon from '@mui/icons-material/Cake';
+import CelebrationIcon from '@mui/icons-material/Celebration';
 import EventIcon from '@mui/icons-material/Event';
 import Avatar from '@mui/material/Avatar';
 import Box from '@mui/material/Box';
@@ -29,7 +31,7 @@ import { Link as RouterLink } from 'react-router-dom';
 import SectionCard from '@/components/common/SectionCard';
 import EmployeeDetailsDialog from '@/features/employees/EmployeeDetailsDialog';
 import { SLATE } from '@/styles/theme';
-import type { UpcomingBirthday, UpcomingHoliday } from '@/types/domain';
+import type { UpcomingAnniversary, UpcomingBirthday, UpcomingHoliday } from '@/types/domain';
 
 const MONTHS = [
   'Jan',
@@ -54,6 +56,11 @@ function whenLabel(daysUntil: number): string {
   if (daysUntil === 0) return 'Today';
   if (daysUntil === 1) return 'Tomorrow';
   return `in ${daysUntil} days`;
+}
+
+/** "1 year", "5 years". */
+function yearsLabel(years: number): string {
+  return years === 1 ? '1 year' : `${years} years`;
 }
 
 /** A small square date badge, like a torn-off calendar page. */
@@ -172,9 +179,11 @@ function PersonRow({ onOpen, children }: { onOpen: () => void; children: ReactNo
 
 export default function Noticeboard({
   birthdays,
+  anniversaries = [],
   holidays,
 }: {
   birthdays: UpcomingBirthday[];
+  anniversaries?: UpcomingAnniversary[];
   holidays: UpcomingHoliday[];
 }) {
   const [selected, setSelected] = useState<number | null>(null);
@@ -193,7 +202,9 @@ export default function Noticeboard({
       sx={{
         display: 'grid',
         gap: 2,
-        gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' },
+        // Three across on a wide screen. On a laptop, birthdays and holidays
+        // keep their row and the anniversary card takes the next one.
+        gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)', xl: 'repeat(3, 1fr)' },
         // No `alignItems: 'start'` — the default stretch is what lets both
         // cards fill the row and so come out the same height.
       }}
@@ -308,6 +319,59 @@ export default function Noticeboard({
               </Stack>
             );
           })}
+        </NoticeList>
+      </SectionCard>
+
+      <SectionCard
+        title="Work anniversaries"
+        icon={<CelebrationIcon color="secondary" />}
+        subtitle="Years at Trigyan, over the next 30 days."
+        count={anniversaries.length}
+        footer={<ViewMore to="/anniversaries" />}
+      >
+        <NoticeList empty="No work anniversaries in the next 30 days.">
+          {anniversaries.map((person) => (
+            <PersonRow key={person.id} onOpen={() => openPerson(person.id)}>
+              <Stack direction="row" spacing={1.5} alignItems="center">
+                <Avatar
+                  src={person.photo_url ?? undefined}
+                  alt={person.full_name}
+                  sx={{
+                    width: BADGE,
+                    height: BADGE,
+                    flexShrink: 0,
+                    fontSize: 15,
+                    fontWeight: 700,
+                    bgcolor: person.is_today ? 'secondary.main' : 'primary.light',
+                  }}
+                >
+                  {person.full_name[0]?.toUpperCase()}
+                </Avatar>
+
+                <Box sx={{ minWidth: 0, flexGrow: 1 }}>
+                  <Typography variant="body2" fontWeight={600} noWrap title={person.full_name}>
+                    {person.full_name}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" noWrap display="block">
+                    {yearsLabel(person.years)} · joined {person.day} {MONTHS[person.month - 1]}{' '}
+                    {person.date_of_joining.slice(0, 4)}
+                  </Typography>
+                </Box>
+
+                <Stack alignItems="flex-end" spacing={0.5} sx={{ flexShrink: 0 }}>
+                  <Typography variant="caption" fontWeight={700}>
+                    {person.day} {MONTHS[person.month - 1]}
+                  </Typography>
+                  <Chip
+                    size="small"
+                    label={person.is_today ? '🎉 Today' : whenLabel(person.days_until)}
+                    color={person.is_today ? 'secondary' : 'default'}
+                    variant={person.is_today ? 'filled' : 'outlined'}
+                  />
+                </Stack>
+              </Stack>
+            </PersonRow>
+          ))}
         </NoticeList>
       </SectionCard>
 

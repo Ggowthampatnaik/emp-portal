@@ -5,6 +5,8 @@ most are the ones proving `?skills=` narrows (AND) rather than widens, and that
 it composes with the search and department filters already in use.
 """
 
+from io import StringIO
+
 import pytest
 
 from apps.employees.models import EmployeeSkill, Skill
@@ -272,3 +274,44 @@ def test_an_empty_skill_filter_changes_nothing(auth_client, org, staffed):
     filtered = auth_client(org["hr"]).get(EMPLOYEES_URL, {"skills": ""})
 
     assert filtered.data["count"] == plain.data["count"]
+
+
+# --- the starter vocabulary ----------------------------------------------------
+
+
+def test_the_starter_list_has_no_name_twice_in_any_case():
+    from common.management.commands.seed_skills import SKILLS
+
+    names = [name.lower() for name, _ in SKILLS]
+    assert len(names) == len(set(names))
+    assert all(len(name) <= 80 for name, _ in SKILLS)
+
+
+@pytest.mark.django_db
+def test_seeding_is_additive_and_safe_to_repeat():
+    from django.core.management import call_command
+
+    from common.management.commands.seed_skills import SKILLS
+
+    Skill.objects.create(name="python", category=Skill.Category.OTHER)  # HR's own spelling
+    call_command("seed_skills", stdout=StringIO())
+    call_command("seed_skills", stdout=StringIO())
+
+    assert Skill.objects.count() == len(SKILLS)
+    # HR's row was left exactly as it was, not duplicated or renamed.
+    assert Skill.objects.filter(name__iexact="python").get().name == "python"
+
+
+@pytest.mark.django_db
+def test_the_picker_gets_the_whole_vocabulary_in_one_request(auth_client, org):
+    from django.core.management import call_command
+
+    call_command("seed_skills", stdout=StringIO())
+    total = Skill.objects.filter(is_active=True).count()
+    assert total > 200, "the list outgrew the old 200-row page"
+
+    response = auth_client(org["employee"]).get(SKILLS_URL, {"page_size": 1000})
+
+    assert response.status_code == 200
+    assert response.data["count"] == total
+    assert len(response.data["results"]) == total

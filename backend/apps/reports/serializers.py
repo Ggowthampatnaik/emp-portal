@@ -37,6 +37,31 @@ class BirthdayCalendarSerializer(serializers.Serializer):
     results = UpcomingBirthdaySerializer(many=True)
 
 
+class UpcomingAnniversarySerializer(serializers.Serializer):
+    """A work anniversary: the joining date, and the years completed on it."""
+
+    id = serializers.IntegerField()
+    employee_code = serializers.CharField()
+    full_name = serializers.CharField()
+    department_name = serializers.CharField(allow_null=True)
+    designation_name = serializers.CharField(allow_null=True)
+    photo_url = serializers.CharField(allow_null=True)
+    date_of_joining = serializers.DateField()
+    years = serializers.IntegerField(help_text="Years completed on this anniversary.")
+    day = serializers.IntegerField()
+    month = serializers.IntegerField()
+    celebrated_on = serializers.DateField()
+    days_until = serializers.IntegerField()
+    is_today = serializers.BooleanField()
+
+
+class AnniversaryCalendarSerializer(serializers.Serializer):
+    """The year of work anniversaries behind the dashboard card."""
+
+    count = serializers.IntegerField()
+    results = UpcomingAnniversarySerializer(many=True)
+
+
 class UpcomingHolidaySerializer(serializers.Serializer):
     id = serializers.IntegerField()
     date = serializers.DateField()
@@ -54,6 +79,7 @@ class DashboardSummarySerializer(serializers.Serializer):
     as_of = serializers.DateField()
     horizon_days = serializers.IntegerField()
     upcoming_birthdays = UpcomingBirthdaySerializer(many=True)
+    upcoming_anniversaries = UpcomingAnniversarySerializer(many=True)
     upcoming_holidays = UpcomingHolidaySerializer(many=True)
     me = serializers.DictField(required=False)
     approvals = serializers.DictField(required=False)

@@ -43,7 +43,7 @@ export default function SkillPicker({
   dense,
 }: Props) {
   const { data, loading } = useApiResource(
-    useCallback(() => skillsApi.list({ page_size: 200 }), []),
+    useCallback(() => skillsApi.list({ page_size: 1000 }), []),
     [],
   );
 

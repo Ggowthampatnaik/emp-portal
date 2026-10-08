@@ -55,9 +55,19 @@ def reset_validity() -> timedelta:
 
 
 def generate_temporary_password() -> str:
-    """A readable one-time password. Includes a symbol so it clears validation."""
-    body = "".join(secrets.choice(ALPHABET) for _ in range(TEMPORARY_PASSWORD_LENGTH - 1))
-    return f"{body}#"
+    """A readable one-time password that meets the portal's own password rule.
+
+    One upper-case letter, one lower-case letter and one digit are guaranteed
+    and the rest is drawn at random - left to chance, about one in six had no
+    digit. The trailing symbol covers the special-character rule.
+    """
+    upper = [c for c in ALPHABET if c.isupper()]
+    lower = [c for c in ALPHABET if c.islower()]
+    digits = [c for c in ALPHABET if c.isdigit()]
+    chars = [secrets.choice(upper), secrets.choice(lower), secrets.choice(digits)]
+    chars += [secrets.choice(ALPHABET) for _ in range(TEMPORARY_PASSWORD_LENGTH - 1 - len(chars))]
+    secrets.SystemRandom().shuffle(chars)
+    return "".join(chars) + "#"
 
 
 @transaction.atomic

@@ -431,7 +431,7 @@ def test_the_portal_stays_shut_until_the_profile_is_submitted(auth_client, org, 
 
     # Coming back later, the draft is still there.
     again = client.get("/api/v1/employees/me/", **headers)
-    assert again.data["phone"] == "+91 90000 12345"
+    assert again.data["phone"] == "+919000012345"
 
     # Submitting the whole thing is what opens the portal.
     full = {

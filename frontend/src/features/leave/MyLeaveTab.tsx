@@ -5,7 +5,6 @@ import Collapse from '@mui/material/Collapse';
 import IconButton from '@mui/material/IconButton';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
-import LinearProgress from '@mui/material/LinearProgress';
 import Stack from '@mui/material/Stack';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
@@ -18,7 +17,7 @@ import Typography from '@mui/material/Typography';
 import { Fragment, useCallback, useState } from 'react';
 
 import { useAppDispatch } from '@/app/hooks';
-import { EmptyState, ErrorAlert } from '@/components/common/Feedback';
+import { EmptyState, ErrorAlert, TableSkeleton } from '@/components/common/Feedback';
 import StatusChip from '@/components/common/StatusChip';
 import LeaveStageTimeline from '@/features/leave/LeaveStageTimeline';
 import { showToast } from '@/features/ui/uiSlice';
@@ -53,7 +52,9 @@ export default function MyLeaveTab({
     }
   };
 
-  if (loading) return <LinearProgress />;
+  // Grey placeholder rows while loading - the table's shape, not a full-width
+  // blue bar under the tabs, which read as the tab underline gone wrong.
+  if (loading) return <TableSkeleton rows={5} columns={6} />;
   if (error) return <ErrorAlert error={error} onRetry={reload} />;
   if (!data?.results.length) {
     return (

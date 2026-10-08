@@ -16,10 +16,10 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import EditIcon from '@mui/icons-material/Edit';
 import SaveIcon from '@mui/icons-material/Save';
 import Alert from '@mui/material/Alert';
+import Autocomplete from '@mui/material/Autocomplete';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import LinearProgress from '@mui/material/LinearProgress';
-import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
@@ -32,12 +32,7 @@ import { showToast } from '@/features/ui/uiSlice';
 import { useApiAction, useApiResource } from '@/hooks/useApiResource';
 import { employeesApi } from '@/services/api/services';
 import type { BankAccountPayload } from '@/types/domain';
-
-const ACCOUNT_TYPES = [
-  { value: 'salary', label: 'Salary' },
-  { value: 'savings', label: 'Savings' },
-  { value: 'current', label: 'Current' },
-];
+import { BANKS, isListedBank, OTHER_BANK } from '@/utils/banks';
 
 const EMPTY: BankAccountPayload = {
   account_holder_name: '',
@@ -45,7 +40,6 @@ const EMPTY: BankAccountPayload = {
   branch_name: '',
   account_number: '',
   ifsc_code: '',
-  account_type: 'salary',
 };
 
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
@@ -88,9 +82,13 @@ export default function BankDetailsCard({
 
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<BankAccountPayload>(EMPTY);
+  /** True when the bank is not in the list and its name is typed instead. */
+  const [otherBank, setOtherBank] = useState(false);
 
   useEffect(() => {
     if (!data) return;
+    // An account saved before the list existed may name a bank it lacks.
+    setOtherBank(Boolean(data.bank_name) && !isListedBank(data.bank_name));
     setForm({
       account_holder_name: data.account_holder_name,
       bank_name: data.bank_name,
@@ -98,7 +96,6 @@ export default function BankDetailsCard({
       // Only the owner gets the number back, so HR always retypes it in full.
       account_number: data.account_number ?? '',
       ifsc_code: data.ifsc_code,
-      account_type: data.account_type,
     });
   }, [data]);
 
@@ -110,7 +107,10 @@ export default function BankDetailsCard({
     setForm((prev) => ({ ...prev, [field]: event.target.value }));
 
   const startEditing = () => {
-    if (missing) setForm({ ...EMPTY, account_holder_name: employeeName });
+    if (missing) {
+      setForm({ ...EMPTY, account_holder_name: employeeName });
+      setOtherBank(false);
+    }
     save.clearError();
     setEditing(true);
   };
@@ -178,15 +178,52 @@ export default function BankDetailsCard({
             error={Boolean(save.fieldErrors.account_holder_name)}
             helperText={save.fieldErrors.account_holder_name ?? 'Exactly as on the passbook.'}
           />
-          <TextField
-            label="Bank name"
-            value={form.bank_name}
-            onChange={set('bank_name')}
+          {/* Picked from the list, so "HDFC", "Hdfc Bank" and "HDFC Bank Ltd"
+              are one bank. "Other bank" opens a box for anything unlisted. */}
+          <Autocomplete
+            id="bank-name"
+            options={[...BANKS, OTHER_BANK]}
+            groupBy={(option) => option.group}
+            getOptionLabel={(option) => option.name}
+            isOptionEqualToValue={(option, chosen) => option.name === chosen.name}
+            value={
+              otherBank
+                ? OTHER_BANK
+                : (BANKS.find(
+                    (bank) => bank.name.toLowerCase() === form.bank_name.trim().toLowerCase(),
+                  ) ?? null)
+            }
+            onChange={(_, chosen) => {
+              const other = chosen === OTHER_BANK;
+              setOtherBank(other);
+              setForm((prev) => ({ ...prev, bank_name: chosen && !other ? chosen.name : '' }));
+            }}
+            autoHighlight
             size="small"
-            required
-            error={Boolean(save.fieldErrors.bank_name)}
-            helperText={save.fieldErrors.bank_name ?? ' '}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Bank name"
+                placeholder="Search or choose your bank"
+                required
+                error={Boolean(save.fieldErrors.bank_name) && !otherBank}
+                helperText={(!otherBank && save.fieldErrors.bank_name) || ' '}
+              />
+            )}
           />
+          {otherBank && (
+            <TextField
+              label="Name of your bank"
+              value={form.bank_name}
+              onChange={set('bank_name')}
+              size="small"
+              required
+              autoFocus
+              error={Boolean(save.fieldErrors.bank_name)}
+              helperText={save.fieldErrors.bank_name ?? 'As printed on the passbook or cheque.'}
+              slotProps={{ htmlInput: { maxLength: 120 } }}
+            />
+          )}
           <TextField
             label="Branch"
             value={form.branch_name}
@@ -220,20 +257,6 @@ export default function BankDetailsCard({
               htmlInput: { maxLength: 11, style: { textTransform: 'uppercase' } },
             }}
           />
-          <TextField
-            select
-            label="Account type"
-            value={form.account_type}
-            onChange={set('account_type')}
-            size="small"
-          >
-            {ACCOUNT_TYPES.map((option) => (
-              <MenuItem key={option.value} value={option.value}>
-                {option.label}
-              </MenuItem>
-            ))}
-          </TextField>
-
           <Stack direction="row" spacing={1} justifyContent="flex-end">
             {!missing && (
               <Button
@@ -285,7 +308,6 @@ export default function BankDetailsCard({
             value={data.account_number ?? data.account_number_masked}
           />
           <Field label="IFSC code" value={data.ifsc_code} />
-          <Field label="Account type" value={data.account_type_label} />
           {data.updated_by_name && (
             <Typography variant="caption" color="text.secondary">
               Last changed by {data.updated_by_name} on{' '}

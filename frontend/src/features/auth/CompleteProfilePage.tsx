@@ -17,6 +17,9 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
+import Checkbox from '@mui/material/Checkbox';
+import Divider from '@mui/material/Divider';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import LinearProgress from '@mui/material/LinearProgress';
 import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
@@ -31,17 +34,33 @@ import { useNavigate } from 'react-router-dom';
 import { useAppDispatch } from '@/app/hooks';
 import Logo from '@/components/common/Logo';
 import { ErrorAlert } from '@/components/common/Feedback';
+import PhoneNumberInput from '@/components/common/PhoneNumberInput';
 import { restoreSession } from '@/features/auth/authSlice';
 import { showToast } from '@/features/ui/uiSlice';
 import { useApiAction, useApiResource } from '@/hooks/useApiResource';
 import { employeesApi } from '@/services/api/services';
 import { BLOOD_GROUPS } from '@/types/domain';
-import { ambientBackground } from '@/styles/theme';
+import { BRAND_BACKDROP, SLATE } from '@/styles/theme';
+import AddressFields from '@/components/common/AddressFields';
+import {
+  EMPTY_ADDRESS,
+  hasAnyAddress,
+  isAddressValid,
+  toAddress,
+  type AddressDetail,
+} from '@/utils/address';
+import { todayIso } from '@/utils/date';
+import { phoneProblem } from '@/utils/phone';
+
+/** The employee's own number must be a mobile; an emergency contact's need not. */
+const PHONE_FIELDS = { phone: true, emergency_contact_phone: false } as const;
+type PhoneField = keyof typeof PHONE_FIELDS;
+const isPhoneField = (field: string): field is PhoneField => field in PHONE_FIELDS;
 
 const GENDERS = [
   { value: 'female', label: 'Female' },
   { value: 'male', label: 'Male' },
-  { value: 'other', label: 'Other' },
+  { value: 'transgender', label: 'Transgender' },
   { value: 'undisclosed', label: 'Prefer not to say' },
 ];
 
@@ -56,6 +75,8 @@ const STEPS = [
     label: 'Where you live',
     caption: 'Your address of record, and where you are now.',
     fields: ['permanent_address', 'current_address'] as const,
+    /** Entered field by field (AddressFields), not as two text boxes. */
+    addresses: true,
   },
   {
     label: 'In an emergency',
@@ -95,6 +116,12 @@ export default function CompleteProfilePage() {
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<Record<Field, string>>(EMPTY);
   const [prefilled, setPrefilled] = useState(false);
+  // The addresses are entered field by field; the server builds the one-line
+  // address of record from these.
+  const [permanent, setPermanent] = useState<AddressDetail>(EMPTY_ADDRESS);
+  const [currentHome, setCurrentHome] = useState<AddressDetail>(EMPTY_ADDRESS);
+  const [sameAddress, setSameAddress] = useState(false);
+  const livesAt = sameAddress ? permanent : currentHome;
 
   const me = useApiResource(
     useCallback(() => employeesApi.me(), []),
@@ -115,14 +142,31 @@ export default function CompleteProfilePage() {
       }
       return restored;
     });
+    const storedPermanent = toAddress(me.data.permanent_address_detail);
+    const storedCurrent = toAddress(me.data.current_address_detail);
+    setPermanent(storedPermanent);
+    setCurrentHome(storedCurrent);
+    setSameAddress(
+      hasAnyAddress(storedPermanent) &&
+        JSON.stringify(storedPermanent) === JSON.stringify(storedCurrent),
+    );
   }
+
+  /** Everything but the address text, which the server builds from the parts. */
+  const withoutAddressText = () =>
+    Object.entries(form).filter(([field]) => !field.endsWith('_address'));
 
   const handleSaveDraft = async () => {
     if (!me.data) return;
-    const body: Record<string, string> = {};
-    for (const [field, value] of Object.entries(form)) {
+    const body: Record<string, unknown> = {};
+    for (const [field, value] of withoutAddressText()) {
       if (value.trim()) body[field] = value.trim();
     }
+    // A draft keeps only what has been typed - half an address is fine here.
+    const typed = (address: AddressDetail) =>
+      Object.fromEntries(Object.entries(address).filter(([, value]) => value.trim()));
+    if (hasAnyAddress(permanent)) body.permanent_address_detail = typed(permanent);
+    if (hasAnyAddress(livesAt)) body.current_address_detail = typed(livesAt);
     const saved = await draft.run(me.data.id, body);
     if (saved) {
       dispatch(
@@ -134,12 +178,28 @@ export default function CompleteProfilePage() {
   const set = (field: Field) => (event: { target: { value: string } }) =>
     setForm((current) => ({ ...current, [field]: event.target.value }));
 
+  // ISO dates compare correctly as strings. `max` stops the calendar offering
+  // a future day, but a date can still be typed in - hence the check too.
+  const today = todayIso();
+  const birthInFuture = form.date_of_birth > today;
+
   const stepIsComplete = (index: number) =>
-    STEPS[index]!.fields.every((field) => form[field].trim().length > 0);
+    STEPS[index]!.addresses
+      ? isAddressValid(permanent) && isAddressValid(livesAt)
+      : STEPS[index]!.fields.every(
+          (field) =>
+            form[field].trim().length > 0 &&
+            !(isPhoneField(field) && phoneProblem(form[field], PHONE_FIELDS[field])) &&
+            !(field === 'date_of_birth' && birthInFuture),
+        );
 
   const handleFinish = async () => {
     if (!me.data) return;
-    const saved = await save.run(me.data.id, form);
+    const saved = await save.run(me.data.id, {
+      ...Object.fromEntries(withoutAddressText()),
+      permanent_address_detail: permanent,
+      current_address_detail: livesAt,
+    });
     if (saved) {
       // The gate is keyed on the flag in /auth/me, so the session has to be
       // refreshed before the portal will let anyone through.
@@ -161,13 +221,24 @@ export default function CompleteProfilePage() {
         display: 'grid',
         placeItems: 'center',
         p: 2,
-        bgcolor: 'background.default',
-        // The same ambient wash as the app shell, so the step before signing
-        // in (or the first form a new joiner sees) reads as the same product.
-        backgroundImage: (theme) => ambientBackground(theme.palette.mode),
+        // The sign-in page's backdrop: sign in, set a password, complete the
+        // profile - the whole first day is one front door, not three rooms.
+        backgroundColor: SLATE.groundDark,
+        backgroundImage: BRAND_BACKDROP,
       }}
     >
-      <Card sx={{ width: '100%', maxWidth: 620 }}>
+      <Card
+        sx={{
+          width: '100%',
+          maxWidth: 620,
+          // The sign-in card's dress, as on the set-password step before it.
+          border: 'none',
+          backgroundColor: (theme) =>
+            theme.palette.mode === 'light' ? 'rgba(255,255,255,0.97)' : 'rgba(24,33,47,0.95)',
+          backdropFilter: 'blur(6px)',
+          boxShadow: '0 24px 60px rgba(15,30,55,0.35)',
+        }}
+      >
         <CardContent sx={{ p: { xs: 3, sm: 4 } }}>
           <Box sx={{ mb: 3 }}>
             <Logo size={52} />
@@ -198,8 +269,41 @@ export default function CompleteProfilePage() {
             {current.caption}
           </Typography>
 
+          {current.addresses && (
+            <Stack spacing={2}>
+              <Typography variant="subtitle1" component="h2" fontWeight={700}>
+                Permanent address
+              </Typography>
+              <AddressFields idPrefix="permanent" value={permanent} onChange={setPermanent} />
+
+              <Divider />
+              <Typography variant="subtitle1" component="h2" fontWeight={700}>
+                Current address
+              </Typography>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={sameAddress}
+                    onChange={(event) => setSameAddress(event.target.checked)}
+                  />
+                }
+                label="Same as permanent address"
+              />
+              {/* Hidden rather than disabled: a second copy of the form, greyed
+                  out, reads as something still to do. */}
+              {!sameAddress && (
+                <AddressFields
+                  idPrefix="current"
+                  value={currentHome}
+                  onChange={setCurrentHome}
+                />
+              )}
+            </Stack>
+          )}
+
           <Stack spacing={2}>
             {current.fields.map((field) => {
+              if (current.addresses) return null;
               const shared = {
                 label: LABELS[field],
                 value: form[field],
@@ -210,6 +314,24 @@ export default function CompleteProfilePage() {
                 helperText: save.fieldErrors[field] ?? ' ',
               };
 
+              if (isPhoneField(field)) {
+                return (
+                  <PhoneNumberInput
+                    key={field}
+                    label={LABELS[field]}
+                    value={form[field]}
+                    onChange={(value) => setForm((prev) => ({ ...prev, [field]: value }))}
+                    mobile={PHONE_FIELDS[field]}
+                    required
+                    serverError={save.fieldErrors[field] ?? draft.fieldErrors[field]}
+                    helperText={
+                      PHONE_FIELDS[field]
+                        ? 'Your mobile number, without the country code.'
+                        : 'Mobile or landline, without the country code.'
+                    }
+                  />
+                );
+              }
               if (field === 'gender') {
                 return (
                   <TextField key={field} select {...shared}>
@@ -243,7 +365,12 @@ export default function CompleteProfilePage() {
                     key={field}
                     type="date"
                     {...shared}
-                    slotProps={{ inputLabel: { shrink: true } }}
+                    error={shared.error || birthInFuture}
+                    helperText={
+                      save.fieldErrors[field] ??
+                      (birthInFuture ? 'Date of birth cannot be in the future.' : ' ')
+                    }
+                    slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: today } }}
                   />
                 );
               }

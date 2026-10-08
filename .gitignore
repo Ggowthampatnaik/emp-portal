@@ -49,3 +49,6 @@ logs/
 # Database dumps hold real employee data. They are restored from this machine
 # with psql (see DEPLOY_RENDER.md) and never pushed to GitHub.
 database/
+
+# Word's lock file while a document is open.
+~$*

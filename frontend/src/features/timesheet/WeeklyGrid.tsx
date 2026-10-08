@@ -21,7 +21,6 @@ import Card from '@mui/material/Card';
 import IconButton from '@mui/material/IconButton';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import LinearProgress from '@mui/material/LinearProgress';
 import Popover from '@mui/material/Popover';
 import Stack from '@mui/material/Stack';
 import Table from '@mui/material/Table';
@@ -36,7 +35,7 @@ import Typography from '@mui/material/Typography';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useAppDispatch } from '@/app/hooks';
-import { EmptyState, ErrorAlert } from '@/components/common/Feedback';
+import { EmptyState, ErrorAlert, TableSkeleton } from '@/components/common/Feedback';
 import StatusChip from '@/components/common/StatusChip';
 import { showToast } from '@/features/ui/uiSlice';
 import { useApiAction, useApiResource } from '@/hooks/useApiResource';
@@ -226,7 +225,9 @@ export default function WeeklyGrid({ onChanged }: { onChanged: () => void }) {
     }
   };
 
-  if (timesheet.loading) return <LinearProgress />;
+  // Grey placeholder rows while loading - the table's shape, not a full-width
+  // blue bar under the tabs, which read as the tab underline gone wrong.
+  if (timesheet.loading) return <TableSkeleton rows={4} columns={8} />;
   if (timesheet.error) return <ErrorAlert error={timesheet.error} onRetry={timesheet.reload} />;
   if (!sheet) return null;
 

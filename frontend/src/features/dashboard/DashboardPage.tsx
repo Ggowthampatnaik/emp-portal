@@ -393,44 +393,7 @@ export default function DashboardPage() {
           </Box>
         )}
 
-        {data?.approvals && (
-          <Box>
-            <BandHeading>Waiting on me</BandHeading>
-            <Box
-              sx={{
-                display: 'grid',
-                gap: 2,
-                gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' },
-              }}
-            >
-              <StatCard
-                title="Leave to approve"
-                value={String(data.approvals.pending_leave)}
-                icon={EventAvailableIcon}
-                // The queue, not the caller's own balances.
-                to="/leave/approvals"
-                tone="attention"
-                detail="Requests in your queue"
-              />
-              <StatCard
-                title="Timesheets to approve"
-                value={String(data.approvals.pending_timesheets)}
-                icon={ScheduleIcon}
-                to="/timesheets/approvals"
-                tone="attention"
-                detail="Submitted and awaiting review"
-              />
-              <StatCard
-                title="Team size"
-                value={String(data.approvals.team_size)}
-                icon={GroupsIcon}
-                to="/employees"
-                detail="People in your reporting branch"
-              />
-            </Box>
-          </Box>
-        )}
-
+        {/* Order: your own numbers, then the company's, then what is waiting on you. */}
         {data?.organization && (
           <Box>
             <BandHeading>Organization</BandHeading>
@@ -477,8 +440,50 @@ export default function DashboardPage() {
           </Box>
         )}
 
+        {data?.approvals && (
+          <Box>
+            <BandHeading>Waiting on me</BandHeading>
+            <Box
+              sx={{
+                display: 'grid',
+                gap: 2,
+                gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' },
+              }}
+            >
+              <StatCard
+                title="Leave to approve"
+                value={String(data.approvals.pending_leave)}
+                icon={EventAvailableIcon}
+                // The queue, not the caller's own balances.
+                to="/leave/approvals"
+                tone="attention"
+                detail="Requests in your queue"
+              />
+              <StatCard
+                title="Timesheets to approve"
+                value={String(data.approvals.pending_timesheets)}
+                icon={ScheduleIcon}
+                to="/timesheets/approvals"
+                tone="attention"
+                detail="Submitted and awaiting review"
+              />
+              <StatCard
+                title="Team size"
+                value={String(data.approvals.team_size)}
+                icon={GroupsIcon}
+                to="/employees"
+                detail="People in your reporting branch"
+              />
+            </Box>
+          </Box>
+        )}
+
         {data && (
-          <Noticeboard birthdays={data.upcoming_birthdays} holidays={data.upcoming_holidays} />
+          <Noticeboard
+            birthdays={data.upcoming_birthdays}
+            anniversaries={data.upcoming_anniversaries}
+            holidays={data.upcoming_holidays}
+          />
         )}
 
         {!loading && !data?.me && !data?.approvals && !data?.organization && (

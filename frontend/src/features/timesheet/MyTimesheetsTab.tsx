@@ -1,6 +1,5 @@
 /** My timesheet history. */
 
-import LinearProgress from '@mui/material/LinearProgress';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
@@ -11,7 +10,7 @@ import TableRow from '@mui/material/TableRow';
 import Typography from '@mui/material/Typography';
 import { useCallback, useState } from 'react';
 
-import { EmptyState, ErrorAlert } from '@/components/common/Feedback';
+import { EmptyState, ErrorAlert, TableSkeleton } from '@/components/common/Feedback';
 import StatusChip from '@/components/common/StatusChip';
 import { useApiResource } from '@/hooks/useApiResource';
 import { timesheetsApi } from '@/services/api/services';
@@ -24,7 +23,9 @@ export default function MyTimesheetsTab({ reloadKey }: { reloadKey: number }) {
     [page, reloadKey],
   );
 
-  if (loading) return <LinearProgress />;
+  // Grey placeholder rows while loading - the table's shape, not a full-width
+  // blue bar under the tabs, which read as the tab underline gone wrong.
+  if (loading) return <TableSkeleton rows={5} columns={5} />;
   if (error) return <ErrorAlert error={error} onRetry={reload} />;
   if (!data?.results.length) {
     return (

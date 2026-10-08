@@ -42,7 +42,7 @@ import { Fragment, useCallback, useState } from 'react';
 
 import { useAppDispatch } from '@/app/hooks';
 import ClosableDialogTitle from '@/components/common/ClosableDialogTitle';
-import { EmptyState, ErrorAlert } from '@/components/common/Feedback';
+import { EmptyState, ErrorAlert, TableSkeleton } from '@/components/common/Feedback';
 import PageHeader from '@/components/common/PageHeader';
 import PayslipBreakdown from '@/features/payroll/PayslipBreakdown';
 import { showToast } from '@/features/ui/uiSlice';
@@ -172,7 +172,7 @@ export default function FinancePage() {
 
           {actionError && <ErrorAlert error={actionError} />}
           {error && <ErrorAlert error={error} onRetry={reload} />}
-          {loading && <LinearProgress sx={{ mb: 2 }} />}
+          {loading && <TableSkeleton rows={5} columns={6} />}
 
           {!loading && rows.length === 0 ? (
             <EmptyState

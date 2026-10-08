@@ -2,17 +2,17 @@
 
 ## Which Hostinger plan
 
-The portal's backend is a **Python (Django) application**. Hostinger's shared
-and Cloud web hosting plans run PHP sites and cannot keep a Python app
-running, so the backend needs a **Hostinger VPS** (KVM 1 or larger,
-Ubuntu 24.04). The database can be MySQL on the same VPS, or a MySQL database
-created in hPanel.
+The portal's backend is a **Python (Django) application** with a **PostgreSQL**
+database. Hostinger's shared and Cloud web hosting plans run PHP sites with
+MySQL and cannot keep a Python app or PostgreSQL running, so the portal needs a
+**Hostinger VPS** (KVM 1 or larger, Ubuntu 24.04). PostgreSQL is installed on
+the same VPS in step 1.
 
 ## What is in this package
 
 | Path | What it is |
 | --- | --- |
-| `database/emp_portal.sql.gz` | The portal's data as a MySQL dump (56 tables, utf8mb4, MariaDB-compatible) |
+| `database/emp_portal_postgres.sql.gz` | The portal's data as a PostgreSQL dump (plain SQL, gzipped, no owners - restores under any user) |
 | `backend/` | The Django API. Settings for this server: `config/settings/hostinger.py` |
 | `backend/.env.hostinger.example` | Every setting the server needs - copy to `backend/.env` |
 | `backend/media/` | Uploaded photos and documents |
@@ -24,13 +24,14 @@ the Python virtualenv, the local SQLite database, logs and backups.
 
 All demo accounts keep their password `Portal@123`. **Change them, or create
 real accounts and deactivate these, before real employees use the portal.**
+Old sign-in sessions and pending password resets were cleared from the dump.
 
 ## 1. Prepare the VPS
 
 ```bash
 sudo apt update && sudo apt upgrade -y
-sudo apt install -y python3 python3-venv python3-dev build-essential pkg-config \
-    default-libmysqlclient-dev nginx mysql-server unzip certbot python3-certbot-nginx
+sudo apt install -y python3 python3-venv python3-dev build-essential \
+    postgresql postgresql-contrib nginx unzip certbot python3-certbot-nginx
 ```
 
 Upload the zip (hPanel file manager, or `scp`) and unpack it:
@@ -38,55 +39,52 @@ Upload the zip (hPanel file manager, or `scp`) and unpack it:
 ```bash
 sudo mkdir -p /srv/emp-portal && sudo chown $USER /srv/emp-portal
 unzip trigyan-portal-hostinger.zip -d /srv/emp-portal
-cd /srv/emp-portal
+cd /srv/emp-portal/emp-portal
 ```
 
 ## 2. Database
 
-Create the database and a user (skip if you made them in hPanel):
+Create a user and an empty database:
 
 ```bash
-sudo mysql -e "CREATE DATABASE emp_portal CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'emp_portal'@'localhost' IDENTIFIED BY 'CHOOSE-A-STRONG-PASSWORD';
-GRANT ALL PRIVILEGES ON emp_portal.* TO 'emp_portal'@'localhost'; FLUSH PRIVILEGES;"
+sudo -u postgres psql -c "CREATE USER emp_portal WITH PASSWORD 'CHOOSE-A-STRONG-PASSWORD';"
+sudo -u postgres psql -c "CREATE DATABASE emp_portal OWNER emp_portal ENCODING 'UTF8';"
 ```
 
 Import the data:
 
 ```bash
-gunzip -c database/emp_portal.sql.gz | mysql -u emp_portal -p emp_portal
+gunzip -c database/emp_portal_postgres.sql.gz | psql -h localhost -U emp_portal -d emp_portal
 ```
-
-Using hPanel instead: **Databases -> phpMyAdmin -> select the database ->
-Import**, and choose `emp_portal.sql.gz` (phpMyAdmin reads `.gz` directly).
 
 ## 3. Backend
 
 ```bash
-cd /srv/emp-portal/backend
+cd backend
 python3 -m venv .venv
 .venv/bin/pip install --upgrade pip
 .venv/bin/pip install -r requirements/hostinger.txt
 cp .env.hostinger.example .env
 nano .env        # fill in every value - see the comments in the file
 .venv/bin/python manage.py migrate          # nothing to apply after the import; confirms the connection
-.venv/bin/python manage.py createcachetable # already in the dump; harmless to repeat
+.venv/bin/python manage.py createcachetable # login lockouts and rate limits live here
 .venv/bin/python manage.py collectstatic --noinput
 .venv/bin/python manage.py check --deploy
 ```
 
-Run it as a service - `/etc/systemd/system/emp-portal.service`:
+Run it as a service - `/etc/systemd/system/emp-portal.service`
+(adjust the paths if you unpacked somewhere else):
 
 ```ini
 [Unit]
 Description=Trigyan Employee Portal API
-After=network.target mysql.service
+After=network.target postgresql.service
 
 [Service]
 User=www-data
-WorkingDirectory=/srv/emp-portal/backend
-EnvironmentFile=/srv/emp-portal/backend/.env
-ExecStart=/srv/emp-portal/backend/.venv/bin/gunicorn config.wsgi:application \
+WorkingDirectory=/srv/emp-portal/emp-portal/backend
+EnvironmentFile=/srv/emp-portal/emp-portal/backend/.env
+ExecStart=/srv/emp-portal/emp-portal/backend/.venv/bin/gunicorn config.wsgi:application \
     --bind 127.0.0.1:8000 --workers 3 --timeout 60
 Restart=always
 
@@ -95,7 +93,7 @@ WantedBy=multi-user.target
 ```
 
 ```bash
-sudo chown -R www-data:www-data /srv/emp-portal/backend/media
+sudo chown -R www-data:www-data /srv/emp-portal/emp-portal/backend/media
 sudo systemctl daemon-reload && sudo systemctl enable --now emp-portal
 curl -s http://127.0.0.1:8000/healthz/     # should report "ok"
 ```
@@ -110,7 +108,7 @@ server {
     server_name portal.example.com;
     client_max_body_size 10m;
 
-    root /srv/emp-portal/frontend/dist;
+    root /srv/emp-portal/emp-portal/frontend/dist;
     index index.html;
 
     location ~ ^/(api|media|static|healthz)/ {
@@ -141,19 +139,32 @@ record for `portal` with the VPS IP address.
 Open `https://portal.example.com`, sign in as `priya.menon@trigyan.io` /
 `Portal@123`, and open Leave, Timesheets and Payslip.
 
+## Things the server needs to reach
+
+- **Email** (`EMAIL_HOST` in `.env`): the portal will not start in production
+  without it. A mailbox from hPanel -> Emails works (`smtp.hostinger.com`).
+- **PIN code lookup**: the address form fills in town and state from India
+  Post's directory at `api.postalpincode.in`. VPS plans allow outbound
+  internet by default; if it is blocked, people simply type the address.
+
 ## Updating later
 
-Upload the new code, then:
+Back the database up first:
 
 ```bash
-cd /srv/emp-portal/backend
+pg_dump -h localhost -U emp_portal -d emp_portal --no-owner | gzip > backup-$(date +%F).sql.gz
+```
+
+Then upload the new code and:
+
+```bash
+cd /srv/emp-portal/emp-portal/backend
 .venv/bin/pip install -r requirements/hostinger.txt
 .venv/bin/python manage.py migrate
+.venv/bin/python manage.py seed_skills     # adds any new skills; changes nothing existing
 .venv/bin/python manage.py collectstatic --noinput
 sudo systemctl restart emp-portal
 ```
-
-Back the database up first: `mysqldump -u emp_portal -p emp_portal | gzip > backup-$(date +%F).sql.gz`.
 
 ## Differences from the Azure setup
 
@@ -161,6 +172,3 @@ Back the database up first: `mysqldump -u emp_portal -p emp_portal | gzip > back
   Storage. Include that folder in your backups.
 - There is no Redis: login lockouts and rate limits use a database table, and
   emails are sent during the request rather than by a background worker.
-- MySQL cannot enforce two "only one open record" rules at the database level
-  (one pending account-closure request per employee; one active membership per
-  project). The application already checks both before saving.

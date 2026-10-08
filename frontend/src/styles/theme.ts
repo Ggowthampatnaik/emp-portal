@@ -64,6 +64,19 @@ export const SLATE = {
 } as const;
 
 /**
+ * The backdrop behind the pages people see before the portal opens - sign-in,
+ * and setting a first password. Drawn in CSS from the portal's own palette:
+ * the dark Slate ground with the two brand hues as soft pools, the ambient
+ * wash's night-time cousin. Nothing to load, nothing to license, nothing to
+ * keep in step with the theme by hand. Pair it with `SLATE.groundDark`.
+ */
+export const BRAND_BACKDROP = [
+  'radial-gradient(1000px 700px at 12% 8%, rgba(107,155,214,0.30), transparent 60%)',
+  'radial-gradient(900px 640px at 88% 92%, rgba(140,198,63,0.16), transparent 62%)',
+  'linear-gradient(150deg, #17293F 0%, #0F1622 48%, #142B47 100%)',
+].join(', ');
+
+/**
  * The ambient wash behind the page.
  *
  * A flat neutral ground is honest but inert - on a portal that is mostly cards

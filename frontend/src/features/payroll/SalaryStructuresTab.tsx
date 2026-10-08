@@ -10,7 +10,6 @@ import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import Divider from '@mui/material/Divider';
-import LinearProgress from '@mui/material/LinearProgress';
 import InputAdornment from '@mui/material/InputAdornment';
 import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
@@ -26,7 +25,7 @@ import Typography from '@mui/material/Typography';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useAppDispatch } from '@/app/hooks';
-import { EmptyState, ErrorAlert } from '@/components/common/Feedback';
+import { EmptyState, ErrorAlert, TableSkeleton } from '@/components/common/Feedback';
 import { showToast } from '@/features/ui/uiSlice';
 import EmployeePicker from '@/components/common/EmployeePicker';
 import { useApiAction, useApiResource } from '@/hooks/useApiResource';
@@ -182,7 +181,7 @@ export default function SalaryStructuresTab() {
 
       {error && <ErrorAlert error={error} onRetry={reload} />}
       {loading ? (
-        <LinearProgress />
+        <TableSkeleton rows={6} columns={6} />
       ) : !data?.results.length ? (
         <EmptyState
           title="No salary structures yet"

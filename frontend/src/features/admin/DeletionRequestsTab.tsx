@@ -19,7 +19,6 @@ import Button from '@mui/material/Button';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
-import LinearProgress from '@mui/material/LinearProgress';
 import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
 import Table from '@mui/material/Table';
@@ -33,7 +32,7 @@ import Typography from '@mui/material/Typography';
 import { useCallback, useState } from 'react';
 
 import { useAppDispatch } from '@/app/hooks';
-import { EmptyState, ErrorAlert } from '@/components/common/Feedback';
+import { EmptyState, ErrorAlert, TableSkeleton } from '@/components/common/Feedback';
 import StatusChip from '@/components/common/StatusChip';
 import ClosableDialogTitle from '@/components/common/ClosableDialogTitle';
 import { showToast } from '@/features/ui/uiSlice';
@@ -122,7 +121,7 @@ export default function DeletionRequestsTab() {
 
       {actionError && <ErrorAlert error={actionError} />}
       {error && <ErrorAlert error={error} onRetry={reload} />}
-      {loading && <LinearProgress sx={{ mb: 2 }} />}
+      {loading && <TableSkeleton rows={4} columns={5} />}
 
       {!loading && data?.results.length === 0 ? (
         <EmptyState

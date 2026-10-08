@@ -204,3 +204,19 @@ def test_removal_is_audited(auth_client, org, account):
 )
 def test_masking_keeps_exactly_four_digits(number, masked):
     assert BankAccount(account_number=number).masked_account_number == masked
+
+
+@pytest.mark.django_db
+def test_the_account_type_is_no_longer_asked_for(auth_client, org):
+    """The form stopped sending it: a new account takes the default, and an
+    existing one keeps whatever it had."""
+    client = auth_client(org["employee"])
+    without_type = {k: v for k, v in ACCOUNT.items() if k != "account_type"}
+
+    created = client.put(url(org["employee"]), without_type)
+    assert created.status_code in (200, 201), created.data
+
+    BankAccount.objects.filter(employee=org["employee"]).update(account_type="current")
+    again = client.put(url(org["employee"]), {**without_type, "bank_name": "ICICI Bank"})
+    assert again.status_code in (200, 201), again.data
+    assert BankAccount.objects.get(employee=org["employee"]).account_type == "current"

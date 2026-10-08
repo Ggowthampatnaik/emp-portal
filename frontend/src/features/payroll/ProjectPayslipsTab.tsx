@@ -18,7 +18,6 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
-import LinearProgress from '@mui/material/LinearProgress';
 import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemText from '@mui/material/ListItemText';
@@ -28,7 +27,7 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { useCallback, useMemo, useState } from 'react';
 
-import { EmptyState, ErrorAlert } from '@/components/common/Feedback';
+import { EmptyState, ErrorAlert, TableSkeleton } from '@/components/common/Feedback';
 import PayslipBreakdown from '@/features/payroll/PayslipBreakdown';
 import { usePayslipDownload } from '@/features/payroll/usePayslipDownload';
 import { useApiResource } from '@/hooks/useApiResource';
@@ -142,7 +141,7 @@ export default function ProjectPayslipsTab() {
 
       {projects.error && <ErrorAlert error={projects.error} onRetry={projects.reload} />}
       {slips.error && <ErrorAlert error={slips.error} onRetry={slips.reload} />}
-      {slips.loading && <LinearProgress sx={{ mb: 2 }} />}
+      {slips.loading && <TableSkeleton rows={4} columns={5} />}
 
       {!projectId ? (
         <EmptyState title="Pick a project" detail="Then drill down: employee, year, month." />

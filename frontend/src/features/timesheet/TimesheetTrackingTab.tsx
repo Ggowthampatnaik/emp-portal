@@ -19,11 +19,9 @@ import SearchIcon from '@mui/icons-material/Search';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
-import Collapse from '@mui/material/Collapse';
 import Divider from '@mui/material/Divider';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
-import LinearProgress from '@mui/material/LinearProgress';
 import Stack from '@mui/material/Stack';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
@@ -39,7 +37,7 @@ import Typography from '@mui/material/Typography';
 import { Fragment, useCallback, useMemo, useState } from 'react';
 
 import { useAppDispatch } from '@/app/hooks';
-import { EmptyState, ErrorAlert } from '@/components/common/Feedback';
+import { EmptyState, ErrorAlert, TableSkeleton } from '@/components/common/Feedback';
 import { showToast } from '@/features/ui/uiSlice';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useApiAction, useApiResource } from '@/hooks/useApiResource';
@@ -78,7 +76,54 @@ function HoursCell({ row }: { row: SubmissionStatusRow }) {
   );
 }
 
-/** The shared rows-of-people table, used inside a project and on its own. */
+/** The small headings over a project's people, inside the project table. */
+const SUBHEAD = { fontWeight: 600, color: 'text.secondary', fontSize: 13 } as const;
+
+/**
+ * One size for every Notify button in the Reminder column - "Notify" and
+ * "Notify 12" alike - so the column reads as a column. Wide enough for a
+ * two-digit count; the icon leads from the same left edge on every row.
+ */
+const NOTIFY_BUTTON_SX = { width: 120, justifyContent: 'flex-start', px: 1.5 } as const;
+
+/** Notify, or "Not needed" once the timesheet is in. Same in every table. */
+function ReminderCell({
+  row,
+  onNotify,
+  mayNotify,
+  busy,
+}: {
+  row: SubmissionStatusRow;
+  onNotify: (row: SubmissionStatusRow) => void;
+  mayNotify: boolean;
+  busy: boolean;
+}) {
+  if (row.submitted) {
+    return (
+      <Typography variant="caption" color="text.disabled">
+        Not needed
+      </Typography>
+    );
+  }
+  return (
+    <Tooltip title={mayNotify ? 'Send a reminder' : 'You cannot send reminders'}>
+      <span>
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<NotificationsActiveIcon />}
+          sx={NOTIFY_BUTTON_SX}
+          onClick={() => onNotify(row)}
+          disabled={!mayNotify || busy}
+        >
+          Notify
+        </Button>
+      </span>
+    </Tooltip>
+  );
+}
+
+/** The rows-of-people table on the "Employee based" view. */
 function EmployeeRows({
   rows,
   onNotify,
@@ -93,14 +138,18 @@ function EmployeeRows({
   dense?: boolean;
 }) {
   return (
-    <Table size="small">
+    // Fixed columns, Hours centred in its own: right-aligned hours sat flush
+    // against a left-aligned Reminder and the two read as one column.
+    <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 860 }}>
       <TableHead>
         <TableRow>
           <TableCell>Employee</TableCell>
-          {!dense && <TableCell>Department</TableCell>}
-          <TableCell>Status</TableCell>
-          <TableCell align="right">Hours</TableCell>
-          <TableCell align="right">Reminder</TableCell>
+          {!dense && <TableCell sx={{ width: '20%' }}>Department</TableCell>}
+          <TableCell sx={{ width: '18%' }}>Status</TableCell>
+          <TableCell align="center" sx={{ width: 140 }}>
+            Hours
+          </TableCell>
+          <TableCell sx={{ width: 150 }}>Reminder</TableCell>
         </TableRow>
       </TableHead>
       <TableBody>
@@ -124,29 +173,11 @@ function EmployeeRows({
             <TableCell>
               <SubmissionChip row={row} />
             </TableCell>
-            <TableCell align="right">
+            <TableCell align="center">
               <HoursCell row={row} />
             </TableCell>
-            <TableCell align="right">
-              {row.submitted ? (
-                <Typography variant="caption" color="text.disabled">
-                  Not needed
-                </Typography>
-              ) : (
-                <Tooltip title={mayNotify ? 'Send a reminder' : 'You cannot send reminders'}>
-                  <span>
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      startIcon={<NotificationsActiveIcon />}
-                      onClick={() => onNotify(row)}
-                      disabled={!mayNotify || busy}
-                    >
-                      Notify
-                    </Button>
-                  </span>
-                </Tooltip>
-              )}
+            <TableCell>
+              <ReminderCell row={row} onNotify={onNotify} mayNotify={mayNotify} busy={busy} />
             </TableCell>
           </TableRow>
         ))}
@@ -307,7 +338,7 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
 
       {notify.error && <ErrorAlert error={notify.error} />}
       {active.error && <ErrorAlert error={active.error} onRetry={active.reload} />}
-      {active.loading && <LinearProgress sx={{ mb: 2 }} />}
+      {active.loading && <TableSkeleton rows={5} columns={5} />}
 
       {view === 0 &&
         !active.loading &&
@@ -318,15 +349,23 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
           />
         ) : (
           <TableContainer sx={{ overflowX: 'auto' }}>
-            <Table size="small">
+            {/* Fixed columns, and a project's people drawn as rows of this same
+                table rather than a table of their own: then Status sits under
+                Manager, Hours under Submitted and each Notify under Reminder,
+                whatever is open. A nested table sized its own columns and drifted. */}
+            <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 860 }}>
               <TableHead>
                 <TableRow>
-                  <TableCell width={48} />
+                  <TableCell sx={{ width: 56 }} />
                   <TableCell>Project</TableCell>
-                  <TableCell>Manager</TableCell>
-                  <TableCell align="center">Team</TableCell>
-                  <TableCell align="center">Submitted</TableCell>
-                  <TableCell align="right">Reminder</TableCell>
+                  <TableCell sx={{ width: '20%' }}>Manager</TableCell>
+                  <TableCell align="center" sx={{ width: '9%' }}>
+                    Team
+                  </TableCell>
+                  <TableCell align="center" sx={{ width: '12%' }}>
+                    Submitted
+                  </TableCell>
+                  <TableCell sx={{ width: 150 }}>Reminder</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -379,11 +418,12 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
                           label={`${project.submitted_count}/${project.team_size}`}
                         />
                       </TableCell>
-                      <TableCell align="right">
+                      <TableCell>
                         <Button
                           size="small"
                           variant="outlined"
                           startIcon={<NotificationsActiveIcon />}
+                          sx={NOTIFY_BUTTON_SX}
                           onClick={() => void notifyProject(project)}
                           disabled={!mayNotify || notify.busy || project.pending_count === 0}
                         >
@@ -391,29 +431,61 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
                         </Button>
                       </TableCell>
                     </TableRow>
-                    <TableRow>
-                      <TableCell colSpan={6} sx={{ py: 0, borderBottom: 0 }}>
-                        <Collapse in={expanded === project.project_id} unmountOnExit>
-                          <Box sx={{ py: 2, pl: 4 }}>
-                            {project.employees.length === 0 ? (
-                              <Typography variant="body2" color="text.secondary">
-                                Nobody is currently on this project.
-                              </Typography>
-                            ) : (
-                              <EmployeeRows
-                                rows={project.employees}
-                                onNotify={(row) =>
-                                  void notifyEmployees([row], row.employee_name)
-                                }
-                                mayNotify={mayNotify}
-                                busy={notify.busy}
-                                dense
-                              />
-                            )}
-                          </Box>
-                        </Collapse>
-                      </TableCell>
-                    </TableRow>
+                    {expanded === project.project_id &&
+                      (project.employees.length === 0 ? (
+                        <TableRow>
+                          <TableCell />
+                          <TableCell colSpan={5}>
+                            <Typography variant="body2" color="text.secondary">
+                              Nobody is currently on this project.
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        <>
+                          <TableRow sx={{ bgcolor: 'action.hover' }}>
+                            <TableCell />
+                            <TableCell sx={SUBHEAD}>Employee</TableCell>
+                            <TableCell sx={SUBHEAD}>Status</TableCell>
+                            <TableCell />
+                            <TableCell align="center" sx={SUBHEAD}>
+                              Hours
+                            </TableCell>
+                            <TableCell sx={SUBHEAD}>Reminder</TableCell>
+                          </TableRow>
+                          {project.employees.map((row) => (
+                            <TableRow key={row.employee_id} hover>
+                              <TableCell />
+                              <TableCell>
+                                <Typography variant="body2" fontWeight={600}>
+                                  {row.employee_name}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  {row.employee_code}
+                                  {row.department_name ? ' · ' + row.department_name : ''}
+                                </Typography>
+                              </TableCell>
+                              <TableCell>
+                                <SubmissionChip row={row} />
+                              </TableCell>
+                              <TableCell />
+                              <TableCell align="center">
+                                <HoursCell row={row} />
+                              </TableCell>
+                              <TableCell>
+                                <ReminderCell
+                                  row={row}
+                                  onNotify={(person) =>
+                                    void notifyEmployees([person], person.employee_name)
+                                  }
+                                  mayNotify={mayNotify}
+                                  busy={notify.busy}
+                                />
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </>
+                      ))}
                   </Fragment>
                 ))}
               </TableBody>

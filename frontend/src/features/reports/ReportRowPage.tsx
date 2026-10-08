@@ -18,7 +18,6 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
 import Divider from '@mui/material/Divider';
-import LinearProgress from '@mui/material/LinearProgress';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import { useCallback } from 'react';
@@ -38,7 +37,7 @@ import {
 } from 'recharts';
 
 import ChartFrame from '@/components/charts/ChartFrame';
-import { EmptyState, ErrorAlert } from '@/components/common/Feedback';
+import { EmptyState, ErrorAlert, TableSkeleton } from '@/components/common/Feedback';
 import PageHeader from '@/components/common/PageHeader';
 import { useApiResource } from '@/hooks/useApiResource';
 import { useChartTheme } from '@/hooks/useChartTheme';
@@ -165,7 +164,7 @@ export default function ReportRowPage() {
     return (
       <>
         <PageHeader title={spec.label} actions={backButton} />
-        <LinearProgress />
+        <TableSkeleton rows={6} columns={5} />
       </>
     );
   }

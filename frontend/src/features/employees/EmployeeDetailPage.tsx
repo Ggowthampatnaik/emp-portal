@@ -23,6 +23,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { useAppDispatch } from '@/app/hooks';
+import EmployeePicker from '@/components/common/EmployeePicker';
+import PhoneNumberInput from '@/components/common/PhoneNumberInput';
 import { ErrorAlert } from '@/components/common/Feedback';
 import PageHeader from '@/components/common/PageHeader';
 import SectionCard from '@/components/common/SectionCard';
@@ -32,15 +34,18 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { useApiAction, useApiResource } from '@/hooks/useApiResource';
 import AssetsCard from '@/features/employees/AssetsCard';
 import BankDetailsCard from '@/features/employees/BankDetailsCard';
+import DirectReportsField from '@/features/employees/DirectReportsField';
 import DocumentsCard from '@/features/employees/DocumentsCard';
 import ExperienceCard from '@/features/employees/ExperienceCard';
 import DeleteProfileCard from '@/features/employees/DeleteProfileCard';
 import ProfilePhoto from '@/features/employees/ProfilePhoto';
+import ReportingManagerField from '@/features/employees/ReportingManagerField';
 import SkillsCard from '@/features/employees/SkillsCard';
 import { employeesApi } from '@/services/api/services';
 import { ROLES } from '@/types/auth';
 import { BLOOD_GROUPS, type EmployeeDetail } from '@/types/domain';
-import { formatDate } from '@/utils/date';
+import { formatDate, todayIso } from '@/utils/date';
+import { formatPhone, phoneProblem } from '@/utils/phone';
 
 const SELF_FIELDS = [
   'phone',
@@ -54,10 +59,9 @@ const SELF_FIELDS = [
 ] as const;
 
 const GENDERS = [
-  { value: '', label: 'Not specified' },
   { value: 'female', label: 'Female' },
   { value: 'male', label: 'Male' },
-  { value: 'other', label: 'Other' },
+  { value: 'transgender', label: 'Transgender' },
   { value: 'undisclosed', label: 'Prefer not to say' },
 ];
 
@@ -143,8 +147,19 @@ export default function EmployeeDetailPage({ self = false }: { self?: boolean })
   const set = (field: keyof EmployeeDetail) => (event: { target: { value: string } }) =>
     setForm((prev) => ({ ...prev, [field]: event.target.value }));
 
+  // `max` stops the calendar offering a future day, but a date can still be
+  // typed in - so say so at once and hold Save, as the profile wizard does.
+  const today = todayIso();
+  const birthInFuture = Boolean(form.date_of_birth && form.date_of_birth > today);
+  // Each phone box says what is wrong under itself; this only holds Save.
+  const phoneInvalid = Boolean(
+    phoneProblem(form.phone ?? '', true) ||
+    phoneProblem(form.emergency_contact_phone ?? '', false),
+  );
+  const cannotSave = birthInFuture || (editing && phoneInvalid);
+
   const handleSave = async () => {
-    if (!data) return;
+    if (!data || cannotSave) return;
 
     const payload: Record<string, unknown> = {};
     const editable = canEditAll
@@ -224,7 +239,7 @@ export default function EmployeeDetailPage({ self = false }: { self?: boolean })
                   startIcon={<SaveIcon />}
                   variant="contained"
                   onClick={handleSave}
-                  disabled={update.busy}
+                  disabled={update.busy || cannotSave}
                 >
                   {update.busy ? 'Saving...' : 'Save'}
                 </Button>
@@ -331,6 +346,19 @@ export default function EmployeeDetailPage({ self = false }: { self?: boolean })
                     </MenuItem>
                   ))}
                 </TextField>
+                <EmployeePicker
+                  label="Reporting manager"
+                  value={form.reporting_manager ?? null}
+                  onChange={(managerId) =>
+                    setForm((prev) => ({ ...prev, reporting_manager: managerId }))
+                  }
+                  size="small"
+                  error={Boolean(update.fieldErrors.reporting_manager)}
+                  helperText={
+                    update.fieldErrors.reporting_manager ??
+                    'Who this person reports to. Clear it for nobody.'
+                  }
+                />
                 <TextField
                   select
                   label="Employment status"
@@ -361,8 +389,17 @@ export default function EmployeeDetailPage({ self = false }: { self?: boolean })
                 <Field label="Email" value={data.email} />
                 <Field label="Department" value={data.department_name} />
                 <Field label="Designation" value={data.designation_name} />
-                <Field label="Reporting manager" value={data.reporting_manager_name} />
-                <Field label="Direct reports" value={data.direct_report_count} />
+                <ReportingManagerField
+                  employee={data}
+                  canManage={canEditAll}
+                  onChanged={(saved) => setData(saved)}
+                />
+                <DirectReportsField
+                  employeeId={data.id}
+                  employeeName={data.full_name}
+                  canManage={canEditAll}
+                  onChanged={(count) => setData({ ...data, direct_report_count: count })}
+                />
                 <Field label="Date of joining" value={formatDate(data.date_of_joining)} />
                 <Field label="Work location" value={data.work_location} />
               </>
@@ -378,13 +415,14 @@ export default function EmployeeDetailPage({ self = false }: { self?: boolean })
           <Stack spacing={2}>
             {editing ? (
               <>
-                <TextField
+                <PhoneNumberInput
                   label="Phone"
                   value={form.phone ?? ''}
-                  onChange={set('phone')}
+                  onChange={(phone) => setForm((prev) => ({ ...prev, phone }))}
+                  mobile
                   size="small"
-                  error={Boolean(update.fieldErrors.phone)}
-                  helperText={update.fieldErrors.phone ?? ' '}
+                  serverError={update.fieldErrors.phone}
+                  helperText="Your mobile number, without the country code."
                 />
                 <TextField
                   label="Date of birth"
@@ -392,7 +430,13 @@ export default function EmployeeDetailPage({ self = false }: { self?: boolean })
                   value={form.date_of_birth ?? ''}
                   onChange={set('date_of_birth')}
                   size="small"
-                  slotProps={{ inputLabel: { shrink: true } }}
+                  error={Boolean(update.fieldErrors.date_of_birth) || birthInFuture}
+                  helperText={
+                    update.fieldErrors.date_of_birth ??
+                    (birthInFuture ? 'Date of birth cannot be in the future.' : ' ')
+                  }
+                  // The calendar stops at today; a typed future date is caught above.
+                  slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: today } }}
                 />
                 <TextField
                   select
@@ -448,16 +492,21 @@ export default function EmployeeDetailPage({ self = false }: { self?: boolean })
                   onChange={set('emergency_contact_name')}
                   size="small"
                 />
-                <TextField
+                <PhoneNumberInput
                   label="Emergency contact phone"
                   value={form.emergency_contact_phone ?? ''}
-                  onChange={set('emergency_contact_phone')}
+                  onChange={(phone) =>
+                    setForm((prev) => ({ ...prev, emergency_contact_phone: phone }))
+                  }
+                  mobile={false}
                   size="small"
+                  serverError={update.fieldErrors.emergency_contact_phone}
+                  helperText="Mobile or landline, without the country code."
                 />
               </>
             ) : (
               <>
-                <Field label="Phone" value={data.phone} />
+                <Field label="Phone" value={formatPhone(data.phone)} />
                 <Field label="Date of birth" value={formatDate(data.date_of_birth)} />
                 <Field label="Gender" value={titleCase(data.gender)} />
                 <Field label="Blood group" value={data.blood_group} />
@@ -465,7 +514,10 @@ export default function EmployeeDetailPage({ self = false }: { self?: boolean })
                 <Field label="Current address" value={data.current_address} />
                 <Divider />
                 <Field label="Emergency contact" value={data.emergency_contact_name} />
-                <Field label="Emergency phone" value={data.emergency_contact_phone} />
+                <Field
+                  label="Emergency phone"
+                  value={formatPhone(data.emergency_contact_phone)}
+                />
               </>
             )}
           </Stack>

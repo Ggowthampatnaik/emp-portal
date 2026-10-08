@@ -13,14 +13,13 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
-import LinearProgress from '@mui/material/LinearProgress';
 import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { useCallback, useEffect, useState } from 'react';
 
-import { EmptyState, ErrorAlert } from '@/components/common/Feedback';
+import { EmptyState, ErrorAlert, TableSkeleton } from '@/components/common/Feedback';
 import PayslipBreakdown from '@/features/payroll/PayslipBreakdown';
 import { useApiResource } from '@/hooks/useApiResource';
 import { usePayslipDownload } from '@/features/payroll/usePayslipDownload';
@@ -86,7 +85,7 @@ export default function MyPayslipsTab() {
     [payslipId],
   );
 
-  if (periods.loading) return <LinearProgress />;
+  if (periods.loading) return <TableSkeleton rows={3} columns={4} />;
   if (periods.error) return <ErrorAlert error={periods.error} onRetry={periods.reload} />;
 
   // The current year stops at the current month - a month that has not
@@ -163,7 +162,7 @@ export default function MyPayslipsTab() {
         />
       ) : (
         <>
-          {detail.loading && <LinearProgress />}
+          {detail.loading && <TableSkeleton rows={6} columns={4} />}
           {detail.error && <ErrorAlert error={detail.error} onRetry={detail.reload} />}
 
           {detail.data && (

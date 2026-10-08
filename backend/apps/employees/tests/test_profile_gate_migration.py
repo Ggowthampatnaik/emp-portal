@@ -14,8 +14,6 @@ from django.contrib.auth import get_user_model
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 
-from apps.employees.models import Employee
-
 BEFORE = ("employees", "0005_account_deletion_request")
 AFTER = ("employees", "0006_phase7_profile_and_reset")
 
@@ -28,11 +26,19 @@ def migrate_to(target):
     return executor.loader.project_state([target]).apps
 
 
+def migrate_to_latest():
+    """Puts every app back on its newest migration, so later tests see the
+    schema the models describe - not the one this test rolled back to."""
+    executor = MigrationExecutor(connection)
+    executor.loader.build_graph()
+    executor.migrate(executor.loader.graph.leaf_nodes())
+
+
 @pytest.fixture
 def before_the_gate(django_db_setup, django_db_blocker):
     with django_db_blocker.unblock():
         yield migrate_to(BEFORE)
-        migrate_to(AFTER)
+        migrate_to_latest()
 
 
 @pytest.mark.django_db(transaction=True)
@@ -45,9 +51,9 @@ def test_everyone_already_on_the_system_keeps_their_access(before_the_gate, djan
         old = before_the_gate.get_model("employees", "Employee")
         old.objects.create(user_id=user.pk, employee_code="TRG8000", date_of_joining="2021-03-01")
 
-        migrate_to(AFTER)
+        after = migrate_to(AFTER).get_model("employees", "Employee")
 
-        assert Employee.objects.get(employee_code="TRG8000").profile_completed is True
+        assert after.objects.get(employee_code="TRG8000").profile_completed is True
 
 
 @pytest.mark.django_db(transaction=True)
@@ -56,13 +62,13 @@ def test_someone_created_after_the_gate_still_has_to_complete_it(
 ):
     """The grandfathering is a one-off, not a permanent exemption."""
     with django_db_blocker.unblock():
-        migrate_to(AFTER)
+        after = migrate_to(AFTER).get_model("employees", "Employee")
 
         user = get_user_model().objects.create_user(
             email="newjoiner@trigyan.io", password="Fixture@123"
         )
-        employee = Employee.objects.create(
-            user=user, employee_code="TRG8001", date_of_joining="2026-08-25"
+        employee = after.objects.create(
+            user_id=user.pk, employee_code="TRG8001", date_of_joining="2026-08-25"
         )
 
         assert employee.profile_completed is False

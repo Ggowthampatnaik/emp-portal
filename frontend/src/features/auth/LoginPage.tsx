@@ -41,21 +41,15 @@ import {
   loginRequest,
 } from '@/services/auth/msalConfig';
 import { rememberedEmail } from '@/services/auth/tokenStorage';
-import { SLATE } from '@/styles/theme';
+import { BRAND_BACKDROP, SLATE } from '@/styles/theme';
 
 /**
- * The backdrop is drawn in CSS from the portal's own palette: the dark Slate
- * ground with the two brand hues as soft pools - the ambient wash's night-time
- * cousin. It replaced a generated cyan-and-navy artwork whose colours appeared
+ * The backdrop (BRAND_BACKDROP in styles/theme, shared with the set-password
+ * page) replaced a generated cyan-and-navy artwork whose colours appeared
  * nowhere else in the product, which made the front door read as a different
- * site from the rooms behind it. Being CSS, there is nothing to load, nothing
- * to license, and nothing to keep in step with the theme by hand.
+ * site from the rooms behind it.
  */
-const BACKDROP = [
-  'radial-gradient(1000px 700px at 12% 8%, rgba(107,155,214,0.30), transparent 60%)',
-  'radial-gradient(900px 640px at 88% 92%, rgba(140,198,63,0.16), transparent 62%)',
-  'linear-gradient(150deg, #17293F 0%, #0F1622 48%, #142B47 100%)',
-].join(', ');
+const BACKDROP = BRAND_BACKDROP;
 
 /** What the portal holds, named the way the sidebar names it. */
 const HIGHLIGHTS = ['Leave & holidays', 'Timesheets', 'Payslips', 'Projects', 'People'];

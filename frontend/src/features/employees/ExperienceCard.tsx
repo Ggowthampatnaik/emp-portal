@@ -208,7 +208,13 @@ export default function ExperienceCard({
               sx={{ p: 1.5, border: 1, borderColor: 'divider', borderRadius: 1 }}
             >
               <Stack spacing={1.5}>
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+                {/* The remove button sits on this row: neither field here has a
+                    hint underneath, so it centres on the boxes themselves. */}
+                <Stack
+                  direction={{ xs: 'column', sm: 'row' }}
+                  spacing={1.5}
+                  alignItems={{ sm: 'center' }}
+                >
                   <TextField
                     label="Job title"
                     size="small"
@@ -225,11 +231,28 @@ export default function ExperienceCard({
                     disabled={save.busy}
                     fullWidth
                   />
+                  <Tooltip title="Remove this role">
+                    <IconButton
+                      aria-label="Remove this role"
+                      onClick={() =>
+                        setDrafts((current) =>
+                          current.filter((_, position) => position !== index),
+                        )
+                      }
+                      disabled={save.busy}
+                      sx={{ alignSelf: { xs: 'flex-end', sm: 'center' } }}
+                    >
+                      <DeleteIcon />
+                    </IconButton>
+                  </Tooltip>
                 </Stack>
+                {/* Top-aligned, and both dates reserve a hint line, so the two
+                    boxes sit level whichever one is carrying the hint. */}
                 <Stack
                   direction={{ xs: 'column', sm: 'row' }}
                   spacing={1.5}
-                  alignItems="center"
+                  alignItems="flex-start"
+                  sx={{ pr: { sm: 6.5 } }}
                 >
                   <TextField
                     label="From"
@@ -238,6 +261,7 @@ export default function ExperienceCard({
                     value={row.from_date}
                     onChange={(event) => update(index, { from_date: event.target.value })}
                     slotProps={{ inputLabel: { shrink: true } }}
+                    helperText=" "
                     disabled={save.busy}
                     fullWidth
                   />
@@ -252,18 +276,6 @@ export default function ExperienceCard({
                     disabled={save.busy}
                     fullWidth
                   />
-                  <Tooltip title="Remove">
-                    <IconButton
-                      onClick={() =>
-                        setDrafts((current) =>
-                          current.filter((_, position) => position !== index),
-                        )
-                      }
-                      disabled={save.busy}
-                    >
-                      <DeleteIcon />
-                    </IconButton>
-                  </Tooltip>
                 </Stack>
                 <TextField
                   label="What you did"
@@ -290,29 +302,37 @@ export default function ExperienceCard({
             </Button>
           </Stack>
 
-          <Stack direction="row" spacing={1}>
-            <Button
-              variant="contained"
-              startIcon={<SaveIcon />}
-              onClick={handleSave}
-              disabled={save.busy}
-            >
-              {save.busy ? 'Saving...' : 'Save'}
-            </Button>
-            <Button
-              variant="text"
-              onClick={() => {
-                setDrafts(rows.map(toDraft));
-                setEditing(false);
-              }}
-              disabled={save.busy}
-            >
-              Cancel
-            </Button>
+          {/* Laid out like the Skills card beside it: the note on the left,
+              Cancel then Save on the right. */}
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            spacing={1.5}
+            alignItems={{ sm: 'center' }}
+            justifyContent="space-between"
+          >
+            <Typography variant="caption" color="text.secondary">
+              Rows without a title, company and start date are dropped when you save.
+            </Typography>
+            <Stack direction="row" spacing={1} justifyContent="flex-end" flexShrink={0}>
+              <Button
+                onClick={() => {
+                  setDrafts(rows.map(toDraft));
+                  setEditing(false);
+                }}
+                disabled={save.busy}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="contained"
+                startIcon={<SaveIcon />}
+                onClick={handleSave}
+                disabled={save.busy}
+              >
+                {save.busy ? 'Saving...' : 'Save'}
+              </Button>
+            </Stack>
           </Stack>
-          <Typography variant="caption" color="text.secondary">
-            Rows without a title, company and start date are dropped when you save.
-          </Typography>
         </Stack>
       )}
     </SectionCard>

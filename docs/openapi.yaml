@@ -40,10 +40,32 @@ paths:
   /api/v1/auth/logout/:
     post:
       operationId: auth_logout_create
-      description: '``POST /api/v1/auth/logout`` - records the event; the SPA drops
-        its tokens.'
+      description: |-
+        ``POST /api/v1/auth/logout`` - retires the session's refresh token.
+
+        Clearing the browser's copy is not signing out. Anything that already has
+        the refresh token - a proxy log, a copied storage entry, a shared machine -
+        can keep minting access tokens from it for the rest of its seven days. So
+        the token is blacklisted here, which ends that session and no other: the
+        same person stays signed in on their phone, which is what they expect.
+
+        It answers 204 whatever happens. A sign-out that fails leaves somebody
+        looking at a portal they have asked to leave, and every outcome that could
+        fail here - no token sent, a token already retired, a malformed one - has
+        the same remedy as success, which is that the browser drops its copy.
       tags:
       - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
@@ -158,6 +180,38 @@ paths:
                 $ref: '#/components/schemas/EntraExchangeResponse'
           description: ''
   /api/v1/employees/:
+    post:
+      operationId: employees_create
+      description: |-
+        Employees.
+
+        Visibility follows :mod:`common.scoping` - HR/Admin see everyone, a manager
+        sees their reporting branch, an employee sees only themselves. ``/me`` is
+        always available, and an employee may edit a limited set of their own fields.
+      tags:
+      - employees
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/EmployeeCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/EmployeeCreateRequest'
+        required: true
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeeCreate'
+          description: ''
     get:
       operationId: employees_list
       description: Employee directory, scoped to what the caller may see.
@@ -210,6 +264,10 @@ paths:
         description: A search term.
         schema:
           type: string
+      - in: query
+        name: work_location
+        schema:
+          type: string
       tags:
       - employees
       security:
@@ -221,38 +279,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PaginatedEmployeeListList'
-          description: ''
-    post:
-      operationId: employees_create
-      description: |-
-        Employees.
-
-        Visibility follows :mod:`common.scoping` - HR/Admin see everyone, a manager
-        sees their reporting branch, an employee sees only themselves. ``/me`` is
-        always available, and an employee may edit a limited set of their own fields.
-      tags:
-      - employees
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/EmployeeCreateRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/EmployeeCreateRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/EmployeeCreateRequest'
-        required: true
-      security:
-      - BearerEntraID: []
-      - BearerPortalJWT: []
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/EmployeeCreate'
           description: ''
   /api/v1/employees/directory/:
     get:
@@ -307,6 +333,10 @@ paths:
         required: false
         in: query
         description: A search term.
+        schema:
+          type: string
+      - in: query
+        name: work_location
         schema:
           type: string
       tags:
@@ -414,6 +444,10 @@ paths:
         description: A search term.
         schema:
           type: string
+      - in: query
+        name: work_location
+        schema:
+          type: string
       tags:
       - employees
       security:
@@ -504,6 +538,10 @@ paths:
         description: A search term.
         schema:
           type: string
+      - in: query
+        name: work_location
+        schema:
+          type: string
       tags:
       - employees
       security:
@@ -517,6 +555,29 @@ paths:
                 $ref: '#/components/schemas/PaginatedEmployeeSearchList'
           description: ''
   /api/v1/employees/{id}/:
+    delete:
+      operationId: employees_destroy
+      description: |-
+        Employees.
+
+        Visibility follows :mod:`common.scoping` - HR/Admin see everyone, a manager
+        sees their reporting branch, an employee sees only themselves. ``/me`` is
+        always available, and an employee may edit a limited set of their own fields.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this employee.
+        required: true
+      tags:
+      - employees
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '204':
+          description: No response body
     get:
       operationId: employees_retrieve
       description: Full employee profile.
@@ -529,6 +590,44 @@ paths:
         required: true
       tags:
       - employees
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeeDetail'
+          description: ''
+    patch:
+      operationId: employees_partial_update
+      description: |-
+        Employees.
+
+        Visibility follows :mod:`common.scoping` - HR/Admin see everyone, a manager
+        sees their reporting branch, an employee sees only themselves. ``/me`` is
+        always available, and an employee may edit a limited set of their own fields.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this employee.
+        required: true
+      tags:
+      - employees
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedEmployeeDetailRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedEmployeeDetailRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedEmployeeDetailRequest'
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
@@ -578,15 +677,47 @@ paths:
               schema:
                 $ref: '#/components/schemas/EmployeeDetail'
           description: ''
-    patch:
-      operationId: employees_partial_update
-      description: |-
-        Employees.
-
-        Visibility follows :mod:`common.scoping` - HR/Admin see everyone, a manager
-        sees their reporting branch, an employee sees only themselves. ``/me`` is
-        always available, and an employee may edit a limited set of their own fields.
+  /api/v1/employees/{id}/assets/{asset_id}/:
+    delete:
+      operationId: employees_assets_destroy
+      description: Amend (PATCH) or return/write off (DELETE) one issued asset.
       parameters:
+      - in: path
+        name: asset_id
+        schema:
+          type: string
+          pattern: ^\d+$
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this employee.
+        required: true
+      tags:
+      - employees
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeeAsset'
+          description: ''
+        '204':
+          description: No response body
+    patch:
+      operationId: employees_assets_partial_update
+      description: Amend (PATCH) or return/write off (DELETE) one issued asset.
+      parameters:
+      - in: path
+        name: asset_id
+        schema:
+          type: string
+          pattern: ^\d+$
+        required: true
       - in: path
         name: id
         schema:
@@ -597,15 +728,15 @@ paths:
       - employees
       requestBody:
         content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedEmployeeDetailRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedEmployeeDetailRequest'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/PatchedEmployeeDetailRequest'
+              $ref: '#/components/schemas/PatchedEmployeeAssetRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedEmployeeAssetRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedEmployeeAssetRequest'
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
@@ -614,34 +745,186 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EmployeeDetail'
+                $ref: '#/components/schemas/EmployeeAsset'
           description: ''
-    delete:
-      operationId: employees_destroy
-      description: |-
-        Employees.
-
-        Visibility follows :mod:`common.scoping` - HR/Admin see everyone, a manager
-        sees their reporting branch, an employee sees only themselves. ``/me`` is
-        always available, and an employee may edit a limited set of their own fields.
+        '204':
+          description: No response body
+  /api/v1/employees/{id}/assets/:
+    post:
+      operationId: employees_assets_create
+      description: List the assets issued to this employee (GET) or issue one (POST).
       parameters:
+      - in: query
+        name: department
+        schema:
+          type: integer
+      - in: query
+        name: designation
+        schema:
+          type: integer
+      - in: query
+        name: employment_status
+        schema:
+          type: string
+          enum:
+          - active
+          - inactive
+          - on_notice
+        description: |-
+          * `active` - Active
+          * `on_notice` - On Notice
+          * `inactive` - Inactive
       - in: path
         name: id
         schema:
           type: integer
         description: A unique integer value identifying this employee.
         required: true
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: reporting_manager
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      - in: query
+        name: work_location
+        schema:
+          type: string
+      tags:
+      - employees
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/EmployeeAssetRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/EmployeeAssetRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeAssetRequest'
+        required: true
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedEmployeeAssetList'
+          description: ''
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeeAsset'
+          description: ''
+    get:
+      operationId: employees_assets_list
+      description: List the assets issued to this employee (GET) or issue one (POST).
+      parameters:
+      - in: query
+        name: department
+        schema:
+          type: integer
+      - in: query
+        name: designation
+        schema:
+          type: integer
+      - in: query
+        name: employment_status
+        schema:
+          type: string
+          enum:
+          - active
+          - inactive
+          - on_notice
+        description: |-
+          * `active` - Active
+          * `on_notice` - On Notice
+          * `inactive` - Inactive
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this employee.
+        required: true
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: reporting_manager
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      - in: query
+        name: work_location
+        schema:
+          type: string
       tags:
       - employees
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
       responses:
-        '204':
-          description: No response body
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedEmployeeAssetList'
+          description: ''
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeeAsset'
+          description: ''
   /api/v1/employees/{id}/bank-account/:
-    get:
-      operationId: employees_bank_account_retrieve
+    delete:
+      operationId: employees_bank_account_destroy
       description: Salary bank account. GET returns the masked number to everyone;
         the full number is included only when the owner reads their own record. Readable
         and writable by the employee and by HR (`bank.manage`) - reporting managers
@@ -702,8 +985,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/BankAccount'
           description: ''
-    delete:
-      operationId: employees_bank_account_destroy
+    get:
+      operationId: employees_bank_account_retrieve
       description: Salary bank account. GET returns the masked number to everyone;
         the full number is included only when the owner reads their own record. Readable
         and writable by the employee and by HR (`bank.manage`) - reporting managers
@@ -730,9 +1013,12 @@ paths:
   /api/v1/employees/{id}/complete-profile/:
     post:
       operationId: employees_complete_profile_create
-      description: The Complete Profile step a new employee must finish before the
-        portal opens (decision D11). Every field is mandatory; the flag flips only
-        when all of them are present.
+      description: |-
+        Employees.
+
+        Visibility follows :mod:`common.scoping` - HR/Admin see everyone, a manager
+        sees their reporting branch, an employee sees only themselves. ``/me`` is
+        always available, and an employee may edit a limited set of their own fields.
       parameters:
       - in: path
         name: id
@@ -746,13 +1032,13 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CompleteProfileRequest'
+              $ref: '#/components/schemas/EmployeeDetailRequest'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/CompleteProfileRequest'
+              $ref: '#/components/schemas/EmployeeDetailRequest'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/CompleteProfileRequest'
+              $ref: '#/components/schemas/EmployeeDetailRequest'
         required: true
       security:
       - BearerEntraID: []
@@ -795,58 +1081,6 @@ paths:
         '204':
           description: No response body
   /api/v1/employees/{id}/deletion-request/:
-    get:
-      operationId: employees_deletion_request_retrieve
-      description: Ask for this account to be closed. HR raises it; an administrator
-        decides (`employee.approve_deletion`). Approving **deactivates** - nothing
-        is deleted, and the person's leave, timesheets and payslips are untouched.
-        GET returns the most recent request, so the button can show what is already
-        in flight; DELETE withdraws an open one.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this employee.
-        required: true
-      tags:
-      - employees
-      security:
-      - BearerEntraID: []
-      - BearerPortalJWT: []
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AccountDeletionRequest'
-          description: ''
-    delete:
-      operationId: employees_deletion_request_destroy
-      description: Ask for this account to be closed. HR raises it; an administrator
-        decides (`employee.approve_deletion`). Approving **deactivates** - nothing
-        is deleted, and the person's leave, timesheets and payslips are untouched.
-        GET returns the most recent request, so the button can show what is already
-        in flight; DELETE withdraws an open one.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this employee.
-        required: true
-      tags:
-      - employees
-      security:
-      - BearerEntraID: []
-      - BearerPortalJWT: []
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AccountDeletionRequest'
-          description: ''
     post:
       operationId: employees_deletion_request_create
       description: Ask for this account to be closed. HR raises it; an administrator
@@ -885,15 +1119,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/AccountDeletionRequest'
           description: ''
-  /api/v1/employees/{id}/documents/:
-    get:
-      operationId: employees_documents_retrieve
-      description: |-
-        Employees.
-
-        Visibility follows :mod:`common.scoping` - HR/Admin see everyone, a manager
-        sees their reporting branch, an employee sees only themselves. ``/me`` is
-        always available, and an employee may edit a limited set of their own fields.
+    delete:
+      operationId: employees_deletion_request_destroy
+      description: Ask for this account to be closed. HR raises it; an administrator
+        decides (`employee.approve_deletion`). Approving **deactivates** - nothing
+        is deleted, and the person's leave, timesheets and payslips are untouched.
+        GET returns the most recent request, so the button can show what is already
+        in flight; DELETE withdraws an open one.
       parameters:
       - in: path
         name: id
@@ -911,16 +1143,15 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EmployeeDocument'
+                $ref: '#/components/schemas/AccountDeletionRequest'
           description: ''
-    post:
-      operationId: employees_documents_create
-      description: |-
-        Employees.
-
-        Visibility follows :mod:`common.scoping` - HR/Admin see everyone, a manager
-        sees their reporting branch, an employee sees only themselves. ``/me`` is
-        always available, and an employee may edit a limited set of their own fields.
+    get:
+      operationId: employees_deletion_request_retrieve
+      description: Ask for this account to be closed. HR raises it; an administrator
+        decides (`employee.approve_deletion`). Approving **deactivates** - nothing
+        is deleted, and the person's leave, timesheets and payslips are untouched.
+        GET returns the most recent request, so the button can show what is already
+        in flight; DELETE withdraws an open one.
       parameters:
       - in: path
         name: id
@@ -930,15 +1161,6 @@ paths:
         required: true
       tags:
       - employees
-      requestBody:
-        content:
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/EmployeeDocumentRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/EmployeeDocumentRequest'
-        required: true
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
@@ -947,12 +1169,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EmployeeDocument'
+                $ref: '#/components/schemas/AccountDeletionRequest'
           description: ''
-  /api/v1/employees/{id}/experience/:
-    get:
-      operationId: employees_experience_list
-      description: Previous employment. PUT replaces the whole history.
+  /api/v1/employees/{id}/direct-reports/:
+    put:
+      operationId: employees_direct_reports_update
+      description: The employee's skills. PUT replaces the whole set, which is how
+        the editor works - add, change and remove are one save.
       parameters:
       - in: query
         name: department
@@ -1008,6 +1231,97 @@ paths:
         description: A search term.
         schema:
           type: string
+      - in: query
+        name: work_location
+        schema:
+          type: string
+      tags:
+      - employees
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeSkillSetRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/EmployeeSkillSetRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/EmployeeSkillSetRequest'
+        required: true
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedEmployeeSkillList'
+          description: ''
+    get:
+      operationId: employees_direct_reports_list
+      description: The employee's skills. PUT replaces the whole set, which is how
+        the editor works - add, change and remove are one save.
+      parameters:
+      - in: query
+        name: department
+        schema:
+          type: integer
+      - in: query
+        name: designation
+        schema:
+          type: integer
+      - in: query
+        name: employment_status
+        schema:
+          type: string
+          enum:
+          - active
+          - inactive
+          - on_notice
+        description: |-
+          * `active` - Active
+          * `on_notice` - On Notice
+          * `inactive` - Inactive
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this employee.
+        required: true
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: reporting_manager
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      - in: query
+        name: work_location
+        schema:
+          type: string
       tags:
       - employees
       security:
@@ -1018,8 +1332,73 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedExperienceDetailList'
+                $ref: '#/components/schemas/PaginatedEmployeeSkillList'
           description: ''
+  /api/v1/employees/{id}/documents/:
+    post:
+      operationId: employees_documents_create
+      description: |-
+        Employees.
+
+        Visibility follows :mod:`common.scoping` - HR/Admin see everyone, a manager
+        sees their reporting branch, an employee sees only themselves. ``/me`` is
+        always available, and an employee may edit a limited set of their own fields.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this employee.
+        required: true
+      tags:
+      - employees
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/EmployeeDocumentRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/EmployeeDocumentRequest'
+        required: true
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeeDocument'
+          description: ''
+    get:
+      operationId: employees_documents_retrieve
+      description: |-
+        Employees.
+
+        Visibility follows :mod:`common.scoping` - HR/Admin see everyone, a manager
+        sees their reporting branch, an employee sees only themselves. ``/me`` is
+        always available, and an employee may edit a limited set of their own fields.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this employee.
+        required: true
+      tags:
+      - employees
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeeDocument'
+          description: ''
+  /api/v1/employees/{id}/experience/:
     put:
       operationId: employees_experience_update
       description: Previous employment. PUT replaces the whole history.
@@ -1078,6 +1457,10 @@ paths:
         description: A search term.
         schema:
           type: string
+      - in: query
+        name: work_location
+        schema:
+          type: string
       tags:
       - employees
       requestBody:
@@ -1092,6 +1475,80 @@ paths:
             schema:
               $ref: '#/components/schemas/ExperienceSetRequest'
         required: true
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedExperienceDetailList'
+          description: ''
+    get:
+      operationId: employees_experience_list
+      description: Previous employment. PUT replaces the whole history.
+      parameters:
+      - in: query
+        name: department
+        schema:
+          type: integer
+      - in: query
+        name: designation
+        schema:
+          type: integer
+      - in: query
+        name: employment_status
+        schema:
+          type: string
+          enum:
+          - active
+          - inactive
+          - on_notice
+        description: |-
+          * `active` - Active
+          * `on_notice` - On Notice
+          * `inactive` - Inactive
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this employee.
+        required: true
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: reporting_manager
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      - in: query
+        name: work_location
+        schema:
+          type: string
+      tags:
+      - employees
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
@@ -1156,150 +1613,32 @@ paths:
               schema:
                 $ref: '#/components/schemas/EmployeePhoto'
           description: ''
-  /api/v1/employees/{id}/skills/:
-    get:
-      operationId: employees_skills_list
-      description: The employee's skills. PUT replaces the whole set, which is how
-        the editor works - add, change and remove are one save.
+  /api/v1/employees/{id}/profile-draft/:
+    post:
+      operationId: employees_profile_draft_create
+      description: The Complete Profile step a new employee must finish before the
+        portal opens (decision D11). Every field is mandatory; the flag flips only
+        when all of them are present.
       parameters:
-      - in: query
-        name: department
-        schema:
-          type: integer
-      - in: query
-        name: designation
-        schema:
-          type: integer
-      - in: query
-        name: employment_status
-        schema:
-          type: string
-          enum:
-          - active
-          - inactive
-          - on_notice
-        description: |-
-          * `active` - Active
-          * `on_notice` - On Notice
-          * `inactive` - Inactive
       - in: path
         name: id
         schema:
           type: integer
         description: A unique integer value identifying this employee.
         required: true
-      - name: ordering
-        required: false
-        in: query
-        description: Which field to use when ordering the results.
-        schema:
-          type: string
-      - name: page
-        required: false
-        in: query
-        description: A page number within the paginated result set.
-        schema:
-          type: integer
-      - name: page_size
-        required: false
-        in: query
-        description: Number of results to return per page.
-        schema:
-          type: integer
-      - in: query
-        name: reporting_manager
-        schema:
-          type: integer
-      - name: search
-        required: false
-        in: query
-        description: A search term.
-        schema:
-          type: string
-      tags:
-      - employees
-      security:
-      - BearerEntraID: []
-      - BearerPortalJWT: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedEmployeeSkillList'
-          description: ''
-    put:
-      operationId: employees_skills_update
-      description: The employee's skills. PUT replaces the whole set, which is how
-        the editor works - add, change and remove are one save.
-      parameters:
-      - in: query
-        name: department
-        schema:
-          type: integer
-      - in: query
-        name: designation
-        schema:
-          type: integer
-      - in: query
-        name: employment_status
-        schema:
-          type: string
-          enum:
-          - active
-          - inactive
-          - on_notice
-        description: |-
-          * `active` - Active
-          * `on_notice` - On Notice
-          * `inactive` - Inactive
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this employee.
-        required: true
-      - name: ordering
-        required: false
-        in: query
-        description: Which field to use when ordering the results.
-        schema:
-          type: string
-      - name: page
-        required: false
-        in: query
-        description: A page number within the paginated result set.
-        schema:
-          type: integer
-      - name: page_size
-        required: false
-        in: query
-        description: Number of results to return per page.
-        schema:
-          type: integer
-      - in: query
-        name: reporting_manager
-        schema:
-          type: integer
-      - name: search
-        required: false
-        in: query
-        description: A search term.
-        schema:
-          type: string
       tags:
       - employees
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/EmployeeSkillSetRequest'
+              $ref: '#/components/schemas/CompleteProfileRequest'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/EmployeeSkillSetRequest'
+              $ref: '#/components/schemas/CompleteProfileRequest'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/EmployeeSkillSetRequest'
+              $ref: '#/components/schemas/CompleteProfileRequest'
         required: true
       security:
       - BearerEntraID: []
@@ -1309,9 +1648,103 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedEmployeeSkillList'
+                $ref: '#/components/schemas/EmployeeDetail'
+          description: ''
+  /api/v1/employees/{id}/skills/:
+    put:
+      operationId: employees_skills_update
+      description: |-
+        Employees.
+
+        Visibility follows :mod:`common.scoping` - HR/Admin see everyone, a manager
+        sees their reporting branch, an employee sees only themselves. ``/me`` is
+        always available, and an employee may edit a limited set of their own fields.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this employee.
+        required: true
+      tags:
+      - employees
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeDetailRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/EmployeeDetailRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/EmployeeDetailRequest'
+        required: true
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeeDetail'
+          description: ''
+    get:
+      operationId: employees_skills_retrieve
+      description: |-
+        Employees.
+
+        Visibility follows :mod:`common.scoping` - HR/Admin see everyone, a manager
+        sees their reporting branch, an employee sees only themselves. ``/me`` is
+        always available, and an employee may edit a limited set of their own fields.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this employee.
+        required: true
+      tags:
+      - employees
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeeDetail'
           description: ''
   /api/v1/departments/:
+    post:
+      operationId: departments_create
+      description: Departments. Everyone may read; ``department.manage`` may write.
+      tags:
+      - departments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepartmentRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DepartmentRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DepartmentRequest'
+        required: true
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Department'
+          description: ''
     get:
       operationId: departments_list
       description: Departments. Everyone may read; ``department.manage`` may write.
@@ -1356,34 +1789,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedDepartmentList'
           description: ''
-    post:
-      operationId: departments_create
+  /api/v1/departments/{id}/:
+    delete:
+      operationId: departments_destroy
       description: Departments. Everyone may read; ``department.manage`` may write.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this department.
+        required: true
       tags:
       - departments
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DepartmentRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/DepartmentRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/DepartmentRequest'
-        required: true
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Department'
-          description: ''
-  /api/v1/departments/{id}/:
+        '204':
+          description: No response body
     get:
       operationId: departments_retrieve
       description: Departments. Everyone may read; ``department.manage`` may write.
@@ -1396,6 +1820,39 @@ paths:
         required: true
       tags:
       - departments
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Department'
+          description: ''
+    patch:
+      operationId: departments_partial_update
+      description: Departments. Everyone may read; ``department.manage`` may write.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this department.
+        required: true
+      tags:
+      - departments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedDepartmentRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedDepartmentRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedDepartmentRequest'
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
@@ -1440,58 +1897,34 @@ paths:
               schema:
                 $ref: '#/components/schemas/Department'
           description: ''
-    patch:
-      operationId: departments_partial_update
-      description: Departments. Everyone may read; ``department.manage`` may write.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this department.
-        required: true
+  /api/v1/designations/:
+    post:
+      operationId: designations_create
+      description: Job titles. Same permission split as departments.
       tags:
-      - departments
+      - designations
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PatchedDepartmentRequest'
+              $ref: '#/components/schemas/DesignationRequest'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/PatchedDepartmentRequest'
+              $ref: '#/components/schemas/DesignationRequest'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/PatchedDepartmentRequest'
+              $ref: '#/components/schemas/DesignationRequest'
+        required: true
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
       responses:
-        '200':
+        '201':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Department'
+                $ref: '#/components/schemas/Designation'
           description: ''
-    delete:
-      operationId: departments_destroy
-      description: Departments. Everyone may read; ``department.manage`` may write.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this department.
-        required: true
-      tags:
-      - departments
-      security:
-      - BearerEntraID: []
-      - BearerPortalJWT: []
-      responses:
-        '204':
-          description: No response body
-  /api/v1/designations/:
     get:
       operationId: designations_list
       description: Job titles. Same permission split as departments.
@@ -1540,34 +1973,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedDesignationList'
           description: ''
-    post:
-      operationId: designations_create
+  /api/v1/designations/{id}/:
+    delete:
+      operationId: designations_destroy
       description: Job titles. Same permission split as departments.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this designation.
+        required: true
       tags:
       - designations
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DesignationRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/DesignationRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/DesignationRequest'
-        required: true
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Designation'
-          description: ''
-  /api/v1/designations/{id}/:
+        '204':
+          description: No response body
     get:
       operationId: designations_retrieve
       description: Job titles. Same permission split as departments.
@@ -1580,6 +2004,39 @@ paths:
         required: true
       tags:
       - designations
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Designation'
+          description: ''
+    patch:
+      operationId: designations_partial_update
+      description: Job titles. Same permission split as departments.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this designation.
+        required: true
+      tags:
+      - designations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedDesignationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedDesignationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedDesignationRequest'
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
@@ -1624,58 +2081,39 @@ paths:
               schema:
                 $ref: '#/components/schemas/Designation'
           description: ''
-    patch:
-      operationId: designations_partial_update
-      description: Job titles. Same permission split as departments.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this designation.
-        required: true
+  /api/v1/skills/:
+    post:
+      operationId: skills_create
+      description: |-
+        The skill vocabulary.
+
+        Everyone signed in may read it - the autocomplete on the employee filters
+        and on the profile editor both need it. Only HR may change it, so the list
+        stays a vocabulary rather than free text (decision D10).
       tags:
-      - designations
+      - skills
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PatchedDesignationRequest'
+              $ref: '#/components/schemas/SkillRequest'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/PatchedDesignationRequest'
+              $ref: '#/components/schemas/SkillRequest'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/PatchedDesignationRequest'
+              $ref: '#/components/schemas/SkillRequest'
+        required: true
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
       responses:
-        '200':
+        '201':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Designation'
+                $ref: '#/components/schemas/Skill'
           description: ''
-    delete:
-      operationId: designations_destroy
-      description: Job titles. Same permission split as departments.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this designation.
-        required: true
-      tags:
-      - designations
-      security:
-      - BearerEntraID: []
-      - BearerPortalJWT: []
-      responses:
-        '204':
-          description: No response body
-  /api/v1/skills/:
     get:
       operationId: skills_list
       description: The controlled skill vocabulary, used by the filters and the profile
@@ -1727,39 +2165,30 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedSkillList'
           description: ''
-    post:
-      operationId: skills_create
+  /api/v1/skills/{id}/:
+    delete:
+      operationId: skills_destroy
       description: |-
         The skill vocabulary.
 
         Everyone signed in may read it - the autocomplete on the employee filters
         and on the profile editor both need it. Only HR may change it, so the list
         stays a vocabulary rather than free text (decision D10).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this skill.
+        required: true
       tags:
       - skills
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SkillRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/SkillRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/SkillRequest'
-        required: true
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Skill'
-          description: ''
-  /api/v1/skills/{id}/:
+        '204':
+          description: No response body
     get:
       operationId: skills_retrieve
       description: |-
@@ -1777,6 +2206,44 @@ paths:
         required: true
       tags:
       - skills
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Skill'
+          description: ''
+    patch:
+      operationId: skills_partial_update
+      description: |-
+        The skill vocabulary.
+
+        Everyone signed in may read it - the autocomplete on the employee filters
+        and on the profile editor both need it. Only HR may change it, so the list
+        stays a vocabulary rather than free text (decision D10).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this skill.
+        required: true
+      tags:
+      - skills
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedSkillRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedSkillRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedSkillRequest'
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
@@ -1826,68 +2293,39 @@ paths:
               schema:
                 $ref: '#/components/schemas/Skill'
           description: ''
-    patch:
-      operationId: skills_partial_update
+  /api/v1/projects/:
+    post:
+      operationId: projects_create
       description: |-
-        The skill vocabulary.
+        Projects.
 
-        Everyone signed in may read it - the autocomplete on the employee filters
-        and on the profile editor both need it. Only HR may change it, so the list
-        stays a vocabulary rather than free text (decision D10).
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this skill.
-        required: true
+        An employee sees the projects they are a member of; anyone with
+        ``project.view_all`` sees the portfolio. Writes need ``project.manage``,
+        team changes need ``project.assign_team``, allocations ``project.allocate``.
       tags:
-      - skills
+      - projects
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PatchedSkillRequest'
+              $ref: '#/components/schemas/ProjectDetailRequest'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/PatchedSkillRequest'
+              $ref: '#/components/schemas/ProjectDetailRequest'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/PatchedSkillRequest'
+              $ref: '#/components/schemas/ProjectDetailRequest'
+        required: true
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
       responses:
-        '200':
+        '201':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Skill'
+                $ref: '#/components/schemas/ProjectDetail'
           description: ''
-    delete:
-      operationId: skills_destroy
-      description: |-
-        The skill vocabulary.
-
-        Everyone signed in may read it - the autocomplete on the employee filters
-        and on the profile editor both need it. Only HR may change it, so the list
-        stays a vocabulary rather than free text (decision D10).
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this skill.
-        required: true
-      tags:
-      - skills
-      security:
-      - BearerEntraID: []
-      - BearerPortalJWT: []
-      responses:
-        '204':
-          description: No response body
-  /api/v1/projects/:
     get:
       operationId: projects_list
       description: |-
@@ -1961,39 +2399,30 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedProjectListList'
           description: ''
-    post:
-      operationId: projects_create
+  /api/v1/projects/{id}/:
+    delete:
+      operationId: projects_destroy
       description: |-
         Projects.
 
         An employee sees the projects they are a member of; anyone with
         ``project.view_all`` sees the portfolio. Writes need ``project.manage``,
         team changes need ``project.assign_team``, allocations ``project.allocate``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project.
+        required: true
       tags:
       - projects
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ProjectDetailRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/ProjectDetailRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/ProjectDetailRequest'
-        required: true
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProjectDetail'
-          description: ''
-  /api/v1/projects/{id}/:
+        '204':
+          description: No response body
     get:
       operationId: projects_retrieve
       description: |-
@@ -2011,6 +2440,44 @@ paths:
         required: true
       tags:
       - projects
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectDetail'
+          description: ''
+    patch:
+      operationId: projects_partial_update
+      description: |-
+        Projects.
+
+        An employee sees the projects they are a member of; anyone with
+        ``project.view_all`` sees the portfolio. Writes need ``project.manage``,
+        team changes need ``project.assign_team``, allocations ``project.allocate``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project.
+        required: true
+      tags:
+      - projects
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectDetailRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectDetailRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectDetailRequest'
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
@@ -2060,8 +2527,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProjectDetail'
           description: ''
-    patch:
-      operationId: projects_partial_update
+  /api/v1/projects/{id}/allocations/{allocation_id}/:
+    delete:
+      operationId: projects_allocations_destroy
       description: |-
         Projects.
 
@@ -2070,6 +2538,12 @@ paths:
         team changes need ``project.assign_team``, allocations ``project.allocate``.
       parameters:
       - in: path
+        name: allocation_id
+        schema:
+          type: string
+          pattern: ^\d+$
+        required: true
+      - in: path
         name: id
         schema:
           type: integer
@@ -2077,17 +2551,6 @@ paths:
         required: true
       tags:
       - projects
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedProjectDetailRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedProjectDetailRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PatchedProjectDetailRequest'
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
@@ -2096,32 +2559,8 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProjectDetail'
+                $ref: '#/components/schemas/ProjectAllocation'
           description: ''
-    delete:
-      operationId: projects_destroy
-      description: |-
-        Projects.
-
-        An employee sees the projects they are a member of; anyone with
-        ``project.view_all`` sees the portfolio. Writes need ``project.manage``,
-        team changes need ``project.assign_team``, allocations ``project.allocate``.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this project.
-        required: true
-      tags:
-      - projects
-      security:
-      - BearerEntraID: []
-      - BearerPortalJWT: []
-      responses:
-        '204':
-          description: No response body
-  /api/v1/projects/{id}/allocations/{allocation_id}/:
     patch:
       operationId: projects_allocations_partial_update
       description: |-
@@ -2166,119 +2605,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProjectAllocation'
           description: ''
-    delete:
-      operationId: projects_allocations_destroy
-      description: |-
-        Projects.
-
-        An employee sees the projects they are a member of; anyone with
-        ``project.view_all`` sees the portfolio. Writes need ``project.manage``,
-        team changes need ``project.assign_team``, allocations ``project.allocate``.
-      parameters:
-      - in: path
-        name: allocation_id
-        schema:
-          type: string
-          pattern: ^\d+$
-        required: true
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this project.
-        required: true
-      tags:
-      - projects
-      security:
-      - BearerEntraID: []
-      - BearerPortalJWT: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProjectAllocation'
-          description: ''
   /api/v1/projects/{id}/allocations/:
-    get:
-      operationId: projects_allocations_list
-      description: |-
-        Projects.
-
-        An employee sees the projects they are a member of; anyone with
-        ``project.view_all`` sees the portfolio. Writes need ``project.manage``,
-        team changes need ``project.assign_team``, allocations ``project.allocate``.
-      parameters:
-      - in: query
-        name: department
-        schema:
-          type: integer
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this project.
-        required: true
-      - in: query
-        name: is_billable
-        schema:
-          type: boolean
-      - name: ordering
-        required: false
-        in: query
-        description: Which field to use when ordering the results.
-        schema:
-          type: string
-      - name: page
-        required: false
-        in: query
-        description: A page number within the paginated result set.
-        schema:
-          type: integer
-      - name: page_size
-        required: false
-        in: query
-        description: Number of results to return per page.
-        schema:
-          type: integer
-      - in: query
-        name: project_manager
-        schema:
-          type: integer
-      - name: search
-        required: false
-        in: query
-        description: A search term.
-        schema:
-          type: string
-      - in: query
-        name: status
-        schema:
-          type: string
-          enum:
-          - active
-          - cancelled
-          - completed
-          - on_hold
-          - planned
-        description: |-
-          * `planned` - Planned
-          * `active` - Active
-          * `on_hold` - On hold
-          * `completed` - Completed
-          * `cancelled` - Cancelled
-      tags:
-      - projects
-      security:
-      - BearerEntraID: []
-      - BearerPortalJWT: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedProjectAllocationList'
-          description: ''
     post:
       operationId: projects_allocations_create
       description: |-
@@ -2370,87 +2697,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedProjectAllocationList'
           description: ''
-  /api/v1/projects/{id}/members/{member_id}/:
-    patch:
-      operationId: projects_members_partial_update
-      description: |-
-        Projects.
-
-        An employee sees the projects they are a member of; anyone with
-        ``project.view_all`` sees the portfolio. Writes need ``project.manage``,
-        team changes need ``project.assign_team``, allocations ``project.allocate``.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this project.
-        required: true
-      - in: path
-        name: member_id
-        schema:
-          type: string
-          pattern: ^\d+$
-        required: true
-      tags:
-      - projects
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedProjectDetailRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedProjectDetailRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PatchedProjectDetailRequest'
-      security:
-      - BearerEntraID: []
-      - BearerPortalJWT: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProjectMember'
-          description: ''
-    delete:
-      operationId: projects_members_destroy
-      description: |-
-        Projects.
-
-        An employee sees the projects they are a member of; anyone with
-        ``project.view_all`` sees the portfolio. Writes need ``project.manage``,
-        team changes need ``project.assign_team``, allocations ``project.allocate``.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this project.
-        required: true
-      - in: path
-        name: member_id
-        schema:
-          type: string
-          pattern: ^\d+$
-        required: true
-      tags:
-      - projects
-      security:
-      - BearerEntraID: []
-      - BearerPortalJWT: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProjectMember'
-          description: ''
-  /api/v1/projects/{id}/members/:
     get:
-      operationId: projects_members_list
+      operationId: projects_allocations_list
       description: |-
         Projects.
 
@@ -2526,8 +2774,87 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedProjectMemberList'
+                $ref: '#/components/schemas/PaginatedProjectAllocationList'
           description: ''
+  /api/v1/projects/{id}/members/{member_id}/:
+    delete:
+      operationId: projects_members_destroy
+      description: |-
+        Projects.
+
+        An employee sees the projects they are a member of; anyone with
+        ``project.view_all`` sees the portfolio. Writes need ``project.manage``,
+        team changes need ``project.assign_team``, allocations ``project.allocate``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project.
+        required: true
+      - in: path
+        name: member_id
+        schema:
+          type: string
+          pattern: ^\d+$
+        required: true
+      tags:
+      - projects
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectMember'
+          description: ''
+    patch:
+      operationId: projects_members_partial_update
+      description: |-
+        Projects.
+
+        An employee sees the projects they are a member of; anyone with
+        ``project.view_all`` sees the portfolio. Writes need ``project.manage``,
+        team changes need ``project.assign_team``, allocations ``project.allocate``.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project.
+        required: true
+      - in: path
+        name: member_id
+        schema:
+          type: string
+          pattern: ^\d+$
+        required: true
+      tags:
+      - projects
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectDetailRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectDetailRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedProjectDetailRequest'
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectMember'
+          description: ''
+  /api/v1/projects/{id}/members/:
     post:
       operationId: projects_members_create
       description: |-
@@ -2619,6 +2946,85 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedProjectMemberList'
           description: ''
+    get:
+      operationId: projects_members_list
+      description: |-
+        Projects.
+
+        An employee sees the projects they are a member of; anyone with
+        ``project.view_all`` sees the portfolio. Writes need ``project.manage``,
+        team changes need ``project.assign_team``, allocations ``project.allocate``.
+      parameters:
+      - in: query
+        name: department
+        schema:
+          type: integer
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this project.
+        required: true
+      - in: query
+        name: is_billable
+        schema:
+          type: boolean
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: project_manager
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - active
+          - cancelled
+          - completed
+          - on_hold
+          - planned
+        description: |-
+          * `planned` - Planned
+          * `active` - Active
+          * `on_hold` - On hold
+          * `completed` - Completed
+          * `cancelled` - Cancelled
+      tags:
+      - projects
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedProjectMemberList'
+          description: ''
   /api/v1/my-allocations/:
     get:
       operationId: my_allocations_list
@@ -2690,6 +3096,37 @@ paths:
                 $ref: '#/components/schemas/ProjectAllocation'
           description: ''
   /api/v1/leaves/:
+    post:
+      operationId: leaves_create
+      description: |-
+        Leave requests and their workflow transitions.
+
+        Requests are never edited in place - they are applied for, then approved,
+        rejected or cancelled, each of which is recorded in ``leave_approvals``.
+      tags:
+      - leaves
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeaveRequestCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LeaveRequestCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/LeaveRequestCreateRequest'
+        required: true
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaveRequest'
+          description: ''
     get:
       operationId: leaves_list
       description: Leave requests visible to the caller.
@@ -2753,37 +3190,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PaginatedLeaveRequestList'
-          description: ''
-    post:
-      operationId: leaves_create
-      description: |-
-        Leave requests and their workflow transitions.
-
-        Requests are never edited in place - they are applied for, then approved,
-        rejected or cancelled, each of which is recorded in ``leave_approvals``.
-      tags:
-      - leaves
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LeaveRequestCreateRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/LeaveRequestCreateRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/LeaveRequestCreateRequest'
-        required: true
-      security:
-      - BearerEntraID: []
-      - BearerPortalJWT: []
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LeaveRequest'
           description: ''
   /api/v1/leaves/hr-approvals/:
     get:
@@ -3223,6 +3629,33 @@ paths:
                 $ref: '#/components/schemas/LeaveRequest'
           description: ''
   /api/v1/leave-types/:
+    post:
+      operationId: leave_types_create
+      description: Leave policies. Everyone reads them; HR owns them.
+      tags:
+      - leave-types
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeaveTypeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LeaveTypeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/LeaveTypeRequest'
+        required: true
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaveType'
+          description: ''
     get:
       operationId: leave_types_list
       description: Leave policies. Everyone reads them; HR owns them.
@@ -3271,34 +3704,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedLeaveTypeList'
           description: ''
-    post:
-      operationId: leave_types_create
+  /api/v1/leave-types/{id}/:
+    delete:
+      operationId: leave_types_destroy
       description: Leave policies. Everyone reads them; HR owns them.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this leave type.
+        required: true
       tags:
       - leave-types
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LeaveTypeRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/LeaveTypeRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/LeaveTypeRequest'
-        required: true
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LeaveType'
-          description: ''
-  /api/v1/leave-types/{id}/:
+        '204':
+          description: No response body
     get:
       operationId: leave_types_retrieve
       description: Leave policies. Everyone reads them; HR owns them.
@@ -3311,6 +3735,39 @@ paths:
         required: true
       tags:
       - leave-types
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaveType'
+          description: ''
+    patch:
+      operationId: leave_types_partial_update
+      description: Leave policies. Everyone reads them; HR owns them.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this leave type.
+        required: true
+      tags:
+      - leave-types
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedLeaveTypeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedLeaveTypeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedLeaveTypeRequest'
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
@@ -3355,57 +3812,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/LeaveType'
           description: ''
-    patch:
-      operationId: leave_types_partial_update
-      description: Leave policies. Everyone reads them; HR owns them.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this leave type.
-        required: true
-      tags:
-      - leave-types
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedLeaveTypeRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedLeaveTypeRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PatchedLeaveTypeRequest'
-      security:
-      - BearerEntraID: []
-      - BearerPortalJWT: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LeaveType'
-          description: ''
-    delete:
-      operationId: leave_types_destroy
-      description: Leave policies. Everyone reads them; HR owns them.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this leave type.
-        required: true
-      tags:
-      - leave-types
-      security:
-      - BearerEntraID: []
-      - BearerPortalJWT: []
-      responses:
-        '204':
-          description: No response body
   /api/v1/leave-balances/:
     get:
       operationId: leave_balances_list
@@ -3514,6 +3920,33 @@ paths:
                 $ref: '#/components/schemas/PaginatedLeaveBalanceList'
           description: ''
   /api/v1/holidays/:
+    post:
+      operationId: holidays_create
+      description: The holiday calendar.
+      tags:
+      - holidays
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HolidayRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/HolidayRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/HolidayRequest'
+        required: true
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Holiday'
+          description: ''
     get:
       operationId: holidays_list
       description: The holiday calendar.
@@ -3558,34 +3991,55 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedHolidayList'
           description: ''
+  /api/v1/holidays/import-docx/:
     post:
-      operationId: holidays_create
-      description: The holiday calendar.
+      operationId: holidays_import_docx_create
+      description: 'Imports the holiday calendar from a Word document (.docx) - a
+        table or a list with a date and a name per row. Creates and updates only;
+        an import never deletes a holiday. `year` fills in for rows whose date has
+        no year of its own (default: the current year).'
       tags:
       - holidays
       requestBody:
         content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/HolidayRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/HolidayRequest'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/HolidayRequest'
-        required: true
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                year:
+                  type: integer
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
       responses:
-        '201':
+        '200':
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Holiday'
           description: ''
   /api/v1/holidays/{id}/:
+    delete:
+      operationId: holidays_destroy
+      description: The holiday calendar.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this holiday.
+        required: true
+      tags:
+      - holidays
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '204':
+          description: No response body
     get:
       operationId: holidays_retrieve
       description: The holiday calendar.
@@ -3598,6 +4052,39 @@ paths:
         required: true
       tags:
       - holidays
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Holiday'
+          description: ''
+    patch:
+      operationId: holidays_partial_update
+      description: The holiday calendar.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this holiday.
+        required: true
+      tags:
+      - holidays
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedHolidayRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedHolidayRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedHolidayRequest'
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
@@ -3642,57 +4129,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/Holiday'
           description: ''
-    patch:
-      operationId: holidays_partial_update
-      description: The holiday calendar.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this holiday.
-        required: true
-      tags:
-      - holidays
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedHolidayRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedHolidayRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PatchedHolidayRequest'
-      security:
-      - BearerEntraID: []
-      - BearerPortalJWT: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Holiday'
-          description: ''
-    delete:
-      operationId: holidays_destroy
-      description: The holiday calendar.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this holiday.
-        required: true
-      tags:
-      - holidays
-      security:
-      - BearerEntraID: []
-      - BearerPortalJWT: []
-      responses:
-        '204':
-          description: No response body
   /api/v1/timesheets/:
     get:
       operationId: timesheets_list
@@ -3947,6 +4383,11 @@ paths:
       operationId: timesheets_status_by_employee_list
       description: Every active employee and whether they submitted for the week.
       parameters:
+      - in: query
+        name: counts_only
+        schema:
+          type: boolean
+        description: Return the totals without the per-employee rows.
       - in: query
         name: employee
         schema:
@@ -4283,6 +4724,33 @@ paths:
                 $ref: '#/components/schemas/Timesheet'
           description: ''
   /api/v1/salary-structures/:
+    post:
+      operationId: salary_structures_create
+      description: Salary structures. Only payroll administrators see or change these.
+      tags:
+      - salary-structures
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SalaryStructureRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SalaryStructureRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SalaryStructureRequest'
+        required: true
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalaryStructure'
+          description: ''
     get:
       operationId: salary_structures_list
       description: Salary structures. Only payroll administrators see or change these.
@@ -4327,34 +4795,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedSalaryStructureList'
           description: ''
-    post:
-      operationId: salary_structures_create
+  /api/v1/salary-structures/{id}/:
+    delete:
+      operationId: salary_structures_destroy
       description: Salary structures. Only payroll administrators see or change these.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this salary structure.
+        required: true
       tags:
       - salary-structures
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SalaryStructureRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/SalaryStructureRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/SalaryStructureRequest'
-        required: true
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SalaryStructure'
-          description: ''
-  /api/v1/salary-structures/{id}/:
+        '204':
+          description: No response body
     get:
       operationId: salary_structures_retrieve
       description: Salary structures. Only payroll administrators see or change these.
@@ -4367,6 +4826,39 @@ paths:
         required: true
       tags:
       - salary-structures
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalaryStructure'
+          description: ''
+    patch:
+      operationId: salary_structures_partial_update
+      description: Salary structures. Only payroll administrators see or change these.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this salary structure.
+        required: true
+      tags:
+      - salary-structures
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedSalaryStructureRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedSalaryStructureRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedSalaryStructureRequest'
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
@@ -4411,58 +4903,38 @@ paths:
               schema:
                 $ref: '#/components/schemas/SalaryStructure'
           description: ''
-    patch:
-      operationId: salary_structures_partial_update
-      description: Salary structures. Only payroll administrators see or change these.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this salary structure.
-        required: true
+  /api/v1/payroll-runs/:
+    post:
+      operationId: payroll_runs_create
+      description: |-
+        Monthly payroll runs and their workflow.
+
+        Maker-checker: ``payroll.process`` opens and processes a run,
+        ``payroll.approve`` signs it off, and the two cannot be the same person.
       tags:
-      - salary-structures
+      - payroll-runs
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PatchedSalaryStructureRequest'
+              $ref: '#/components/schemas/PayrollRunRequest'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/PatchedSalaryStructureRequest'
+              $ref: '#/components/schemas/PayrollRunRequest'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/PatchedSalaryStructureRequest'
+              $ref: '#/components/schemas/PayrollRunRequest'
+        required: true
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
       responses:
-        '200':
+        '201':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SalaryStructure'
+                $ref: '#/components/schemas/PayrollRun'
           description: ''
-    delete:
-      operationId: salary_structures_destroy
-      description: Salary structures. Only payroll administrators see or change these.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this salary structure.
-        required: true
-      tags:
-      - salary-structures
-      security:
-      - BearerEntraID: []
-      - BearerPortalJWT: []
-      responses:
-        '204':
-          description: No response body
-  /api/v1/payroll-runs/:
     get:
       operationId: payroll_runs_list
       description: |-
@@ -4525,38 +4997,29 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedPayrollRunList'
           description: ''
-    post:
-      operationId: payroll_runs_create
+  /api/v1/payroll-runs/{id}/:
+    delete:
+      operationId: payroll_runs_destroy
       description: |-
         Monthly payroll runs and their workflow.
 
         Maker-checker: ``payroll.process`` opens and processes a run,
         ``payroll.approve`` signs it off, and the two cannot be the same person.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this payroll run.
+        required: true
       tags:
       - payroll-runs
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PayrollRunRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PayrollRunRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PayrollRunRequest'
-        required: true
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
       responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PayrollRun'
-          description: ''
-  /api/v1/payroll-runs/{id}/:
+        '204':
+          description: No response body
     get:
       operationId: payroll_runs_retrieve
       description: |-
@@ -4583,28 +5046,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/PayrollRunDetail'
           description: ''
-    delete:
-      operationId: payroll_runs_destroy
-      description: |-
-        Monthly payroll runs and their workflow.
-
-        Maker-checker: ``payroll.process`` opens and processes a run,
-        ``payroll.approve`` signs it off, and the two cannot be the same person.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this payroll run.
-        required: true
-      tags:
-      - payroll-runs
-      security:
-      - BearerEntraID: []
-      - BearerPortalJWT: []
-      responses:
-        '204':
-          description: No response body
   /api/v1/payroll-runs/{id}/approve/:
     post:
       operationId: payroll_runs_approve_create
@@ -5340,6 +5781,39 @@ paths:
               schema:
                 $ref: '#/components/schemas/DashboardSummary'
           description: ''
+  /api/v1/dashboard/birthdays/:
+    get:
+      operationId: dashboard_birthdays_retrieve
+      description: Every active employee's birthday over the next year, soonest first.
+      tags:
+      - dashboard
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BirthdayCalendar'
+          description: ''
+  /api/v1/dashboard/anniversaries/:
+    get:
+      operationId: dashboard_anniversaries_retrieve
+      description: Every active employee's work anniversary over the next year, soonest
+        first.
+      tags:
+      - dashboard
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnniversaryCalendar'
+          description: ''
   /api/v1/reports/employees/:
     get:
       operationId: reports_employees_retrieve
@@ -5411,14 +5885,51 @@ paths:
         '200':
           description: No response body
   /api/v1/admin/users/:
+    post:
+      operationId: admin_users_create
+      description: |-
+        Portal accounts.
+
+        Two ways in: employee onboarding raises an account alongside an employment
+        record, and an administrator can raise a bare account here for somebody who
+        needs to sign in without being on the payroll. Both produce the same thing -
+        a hashed password and ``must_change_password`` - so the first sign-in
+        behaves identically whichever door it came through.
+      tags:
+      - admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserCreateRequest'
+        required: true
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserCreate'
+          description: ''
     get:
       operationId: admin_users_list
-      description: Portal accounts. Creating an account happens through employee onboarding.
+      description: |-
+        Portal accounts.
+
+        Two ways in: employee onboarding raises an account alongside an employment
+        record, and an administrator can raise a bare account here for somebody who
+        needs to sign in without being on the payroll. Both produce the same thing -
+        a hashed password and ``must_change_password`` - so the first sign-in
+        behaves identically whichever door it came through.
       parameters:
-      - in: query
-        name: is_active
-        schema:
-          type: boolean
       - name: ordering
         required: false
         in: query
@@ -5437,14 +5948,6 @@ paths:
         description: Number of results to return per page.
         schema:
           type: integer
-      - in: query
-        name: roles
-        schema:
-          type: array
-          items:
-            type: integer
-        explode: true
-        style: form
       - name: search
         required: false
         in: query
@@ -5463,19 +5966,37 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedUserAdminList'
           description: ''
-  /api/v1/admin/users/{id}/:
-    get:
-      operationId: admin_users_retrieve
-      description: Portal accounts. Creating an account happens through employee onboarding.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this user.
-        required: true
+  /api/v1/admin/users/delete/:
+    post:
+      operationId: admin_users_delete_create
+      description: |-
+        Deletes accounts - one, several, or all of them.
+
+        A POST, not DELETE, because it takes a body and acts on many rows.
+        Deleting a user cascades to their employment record and everything
+        hanging off it; this is removal, not deactivation - the switch on
+        each row is deactivation.
+
+        Accounts are skipped rather than failing the whole request: the
+        caller's own (locking every administrator out in one click should take
+        more than one click), anyone holding an employment record (removing a
+        person is the account-closure flow, which takes two people), and
+        unknown ids, so a stale table does not turn into an error.
+
+        ``all=true`` is Super Admin's alone.
       tags:
       - admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserBulkDeleteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserBulkDeleteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserBulkDeleteRequest'
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
@@ -5484,11 +6005,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UserAdmin'
+                $ref: '#/components/schemas/UserBulkDeleteResult'
           description: ''
-    put:
-      operationId: admin_users_update
-      description: Portal accounts. Creating an account happens through employee onboarding.
+  /api/v1/admin/users/{id}/:
+    get:
+      operationId: admin_users_retrieve
+      description: |-
+        Portal accounts.
+
+        Two ways in: employee onboarding raises an account alongside an employment
+        record, and an administrator can raise a bare account here for somebody who
+        needs to sign in without being on the payroll. Both produce the same thing -
+        a hashed password and ``must_change_password`` - so the first sign-in
+        behaves identically whichever door it came through.
       parameters:
       - in: path
         name: id
@@ -5498,17 +6027,6 @@ paths:
         required: true
       tags:
       - admin
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UserAdminRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/UserAdminRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/UserAdminRequest'
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
@@ -5521,7 +6039,14 @@ paths:
           description: ''
     patch:
       operationId: admin_users_partial_update
-      description: Portal accounts. Creating an account happens through employee onboarding.
+      description: |-
+        Portal accounts.
+
+        Two ways in: employee onboarding raises an account alongside an employment
+        record, and an administrator can raise a bare account here for somebody who
+        needs to sign in without being on the payroll. Both produce the same thing -
+        a hashed password and ``must_change_password`` - so the first sign-in
+        behaves identically whichever door it came through.
       parameters:
       - in: path
         name: id
@@ -5542,6 +6067,46 @@ paths:
           multipart/form-data:
             schema:
               $ref: '#/components/schemas/PatchedUserAdminRequest'
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserAdmin'
+          description: ''
+    put:
+      operationId: admin_users_update
+      description: |-
+        Portal accounts.
+
+        Two ways in: employee onboarding raises an account alongside an employment
+        record, and an administrator can raise a bare account here for somebody who
+        needs to sign in without being on the payroll. Both produce the same thing -
+        a hashed password and ``must_change_password`` - so the first sign-in
+        behaves identically whichever door it came through.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this user.
+        required: true
+      tags:
+      - admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserAdminRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UserAdminRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UserAdminRequest'
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
@@ -5746,6 +6311,33 @@ paths:
                 $ref: '#/components/schemas/PaginatedModulePermissionList'
           description: ''
   /api/v1/admin/settings/:
+    post:
+      operationId: admin_settings_create
+      description: Runtime configuration.
+      tags:
+      - admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemSettingRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SystemSettingRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SystemSettingRequest'
+        required: true
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemSetting'
+          description: ''
     get:
       operationId: admin_settings_list
       description: Runtime configuration.
@@ -5786,33 +6378,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedSystemSettingList'
           description: ''
-    post:
-      operationId: admin_settings_create
-      description: Runtime configuration.
-      tags:
-      - admin
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SystemSettingRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/SystemSettingRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/SystemSettingRequest'
-        required: true
-      security:
-      - BearerEntraID: []
-      - BearerPortalJWT: []
-      responses:
-        '201':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SystemSetting'
-          description: ''
   /api/v1/admin/settings/{id}/:
     get:
       operationId: admin_settings_retrieve
@@ -5826,6 +6391,39 @@ paths:
         required: true
       tags:
       - admin
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemSetting'
+          description: ''
+    patch:
+      operationId: admin_settings_partial_update
+      description: Runtime configuration.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this system setting.
+        required: true
+      tags:
+      - admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedSystemSettingRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedSystemSettingRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedSystemSettingRequest'
       security:
       - BearerEntraID: []
       - BearerPortalJWT: []
@@ -5870,39 +6468,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/SystemSetting'
           description: ''
-    patch:
-      operationId: admin_settings_partial_update
-      description: Runtime configuration.
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this system setting.
-        required: true
-      tags:
-      - admin
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchedSystemSettingRequest'
-          application/x-www-form-urlencoded:
-            schema:
-              $ref: '#/components/schemas/PatchedSystemSettingRequest'
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/PatchedSystemSettingRequest'
-      security:
-      - BearerEntraID: []
-      - BearerPortalJWT: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SystemSetting'
-          description: ''
   /api/v1/admin/audit-logs/:
     get:
       operationId: admin_audit_logs_list
@@ -5917,7 +6482,9 @@ paths:
           - create
           - delete
           - export
+          - locked_out
           - login
+          - login_failed
           - logout
           - reject
           - submit
@@ -5927,6 +6494,8 @@ paths:
           * `update` - Update
           * `delete` - Delete
           * `login` - Login
+          * `login_failed` - Failed sign-in
+          * `locked_out` - Account locked
           * `logout` - Logout
           * `approve` - Approve
           * `reject` - Reject
@@ -6138,6 +6707,28 @@ paths:
               schema:
                 $ref: '#/components/schemas/AccountDeletionRequest'
           description: ''
+  /api/v1/pincodes/{pincode}/:
+    get:
+      operationId: pincodes_retrieve
+      description: Looks up an Indian PIN code in India Post's directory (cached).
+      parameters:
+      - in: path
+        name: pincode
+        schema:
+          type: string
+        required: true
+      tags:
+      - pincodes
+      security:
+      - BearerEntraID: []
+      - BearerPortalJWT: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PincodeLookup'
+          description: ''
 components:
   schemas:
     AccountDeletionCreateRequest:
@@ -6261,6 +6852,93 @@ components:
         * `savings` - Savings
         * `current` - Current
         * `salary` - Salary
+    Address:
+      type: object
+      properties:
+        country:
+          type: string
+          default: IN
+          maxLength: 2
+        pincode:
+          type: string
+          default: ''
+          maxLength: 10
+        line1:
+          type: string
+          title: Flat, house no., building, apartment
+          maxLength: 120
+        line2:
+          type: string
+          title: Area, street, sector, village
+          maxLength: 120
+        landmark:
+          type: string
+          default: ''
+          maxLength: 120
+        city:
+          type: string
+          title: Town/City
+          maxLength: 60
+        state:
+          type: string
+          default: ''
+          maxLength: 60
+      required:
+      - city
+      - line1
+      - line2
+    AddressRequest:
+      type: object
+      properties:
+        country:
+          type: string
+          minLength: 1
+          default: IN
+          maxLength: 2
+        pincode:
+          type: string
+          default: ''
+          maxLength: 10
+        line1:
+          type: string
+          minLength: 1
+          title: Flat, house no., building, apartment
+          maxLength: 120
+        line2:
+          type: string
+          minLength: 1
+          title: Area, street, sector, village
+          maxLength: 120
+        landmark:
+          type: string
+          default: ''
+          maxLength: 120
+        city:
+          type: string
+          minLength: 1
+          title: Town/City
+          maxLength: 60
+        state:
+          type: string
+          default: ''
+          maxLength: 60
+      required:
+      - city
+      - line1
+      - line2
+    AnniversaryCalendar:
+      type: object
+      description: The year of work anniversaries behind the dashboard card.
+      properties:
+        count:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/UpcomingAnniversary'
+      required:
+      - count
+      - results
     ApprovalStatusEnum:
       enum:
       - draft
@@ -6338,6 +7016,8 @@ components:
       - update
       - delete
       - login
+      - login_failed
+      - locked_out
       - logout
       - approve
       - reject
@@ -6349,6 +7029,8 @@ components:
         * `update` - Update
         * `delete` - Delete
         * `login` - Login
+        * `login_failed` - Failed sign-in
+        * `locked_out` - Account locked
         * `logout` - Logout
         * `approve` - Approve
         * `reject` - Reject
@@ -6446,6 +7128,20 @@ components:
       - account_number
       - bank_name
       - ifsc_code
+    BirthdayCalendar:
+      type: object
+      description: The year of birthdays behind the dashboard card, shaped like a
+        list page.
+      properties:
+        count:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/UpcomingBirthday'
+      required:
+      - count
+      - results
     BlankEnum:
       enum:
       - ''
@@ -6502,7 +7198,6 @@ components:
         phone:
           type: string
           minLength: 1
-          pattern: ^[0-9+\-\s()]{6,20}$
           maxLength: 20
         date_of_birth:
           type: string
@@ -6525,11 +7220,9 @@ components:
             * `O-` - O-
         permanent_address:
           type: string
-          minLength: 1
           description: Home address of record, used for statutory paperwork.
         current_address:
           type: string
-          minLength: 1
           description: Where the employee lives now, when it differs from the permanent
             one.
         emergency_contact_name:
@@ -6540,15 +7233,29 @@ components:
           type: string
           minLength: 1
           maxLength: 20
+        permanent_address_detail:
+          $ref: '#/components/schemas/AddressRequest'
+        current_address_detail:
+          $ref: '#/components/schemas/AddressRequest'
       required:
       - blood_group
-      - current_address
       - date_of_birth
       - emergency_contact_name
       - emergency_contact_phone
       - gender
-      - permanent_address
       - phone
+    ConditionEnum:
+      enum:
+      - new
+      - good
+      - fair
+      - needs_repair
+      type: string
+      description: |-
+        * `new` - New
+        * `good` - Good
+        * `fair` - Fair
+        * `needs_repair` - Needs repair
     CurrentUser:
       type: object
       description: '``GET /api/v1/auth/me`` - drives the frontend auth slice and route
@@ -6647,6 +7354,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/UpcomingBirthday'
+        upcoming_anniversaries:
+          type: array
+          items:
+            $ref: '#/components/schemas/UpcomingAnniversary'
         upcoming_holidays:
           type: array
           items:
@@ -6663,6 +7374,7 @@ components:
       required:
       - as_of
       - horizon_days
+      - upcoming_anniversaries
       - upcoming_birthdays
       - upcoming_holidays
     DayPartEnum:
@@ -6790,6 +7502,7 @@ components:
       - bachelors
       - masters
       - other_education
+      - skill_certificate
       - education
       - experience_letter
       - experience
@@ -6804,11 +7517,120 @@ components:
         * `bachelors` - Bachelor's degree
         * `masters` - Master's degree
         * `other_education` - Other education certificate
+        * `skill_certificate` - Skills certification
         * `education` - Education certificate
         * `experience_letter` - Experience letter
         * `experience` - Experience letter (legacy)
         * `contract` - Employment contract
         * `other` - Other
+    EmployeeAsset:
+      type: object
+      description: |-
+        Company kit issued to one employee.
+
+        The photo travels in as multipart and back out as a URL, the same shape the
+        profile photo uses, so the SPA has one thing to render rather than two.
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        employee:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          description: What it is, e.g. "MacBook Pro 14".
+          maxLength: 120
+        brand:
+          type: string
+          description: Who made it, e.g. "Apple".
+          maxLength: 80
+        serial_number:
+          type: string
+          maxLength: 100
+        photo_url:
+          type: string
+          nullable: true
+          readOnly: true
+        issued_on:
+          type: string
+          format: date
+          nullable: true
+          description: When the kit was handed over.
+        condition:
+          allOf:
+          - $ref: '#/components/schemas/ConditionEnum'
+          description: |-
+            State of the kit when last recorded.
+
+            * `new` - New
+            * `good` - Good
+            * `fair` - Fair
+            * `needs_repair` - Needs repair
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - brand
+      - created_at
+      - employee
+      - id
+      - name
+      - photo_url
+      - serial_number
+      - updated_at
+    EmployeeAssetRequest:
+      type: object
+      description: |-
+        Company kit issued to one employee.
+
+        The photo travels in as multipart and back out as a URL, the same shape the
+        profile photo uses, so the SPA has one thing to render rather than two.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: What it is, e.g. "MacBook Pro 14".
+          maxLength: 120
+        brand:
+          type: string
+          minLength: 1
+          description: Who made it, e.g. "Apple".
+          maxLength: 80
+        serial_number:
+          type: string
+          minLength: 1
+          maxLength: 100
+        photo:
+          type: string
+          format: binary
+          writeOnly: true
+          nullable: true
+          description: Optional; stored in Azure Blob Storage in deployed environments.
+        issued_on:
+          type: string
+          format: date
+          nullable: true
+          description: When the kit was handed over.
+        condition:
+          allOf:
+          - $ref: '#/components/schemas/ConditionEnum'
+          description: |-
+            State of the kit when last recorded.
+
+            * `new` - New
+            * `good` - Good
+            * `fair` - Fair
+            * `needs_repair` - Needs repair
+      required:
+      - brand
+      - name
+      - serial_number
     EmployeeCreate:
       type: object
       description: |-
@@ -6840,12 +7662,8 @@ components:
         employment_status:
           $ref: '#/components/schemas/EmploymentStatusEnum'
         phone:
-          oneOf:
-          - type: string
-            pattern: ^[0-9+\-\s()]{6,20}$
-            maxLength: 20
-          - type: string
-            maxLength: 0
+          type: string
+          maxLength: 20
         date_of_birth:
           type: string
           format: date
@@ -6942,12 +7760,8 @@ components:
         employment_status:
           $ref: '#/components/schemas/EmploymentStatusEnum'
         phone:
-          oneOf:
-          - type: string
-            pattern: ^[0-9+\-\s()]{6,20}$
-            maxLength: 20
-          - type: string
-            maxLength: 0
+          type: string
+          maxLength: 20
         date_of_birth:
           type: string
           format: date
@@ -7054,12 +7868,8 @@ components:
         employment_status:
           $ref: '#/components/schemas/EmploymentStatusEnum'
         phone:
-          oneOf:
-          - type: string
-            pattern: ^[0-9+\-\s()]{6,20}$
-            maxLength: 20
-          - type: string
-            maxLength: 0
+          type: string
+          maxLength: 20
         date_of_birth:
           type: string
           format: date
@@ -7094,6 +7904,10 @@ components:
           type: string
           description: Where the employee lives now, when it differs from the permanent
             one.
+        permanent_address_detail:
+          $ref: '#/components/schemas/Address'
+        current_address_detail:
+          $ref: '#/components/schemas/Address'
         emergency_contact_name:
           type: string
           maxLength: 120
@@ -7173,12 +7987,8 @@ components:
         employment_status:
           $ref: '#/components/schemas/EmploymentStatusEnum'
         phone:
-          oneOf:
-          - type: string
-            pattern: ^[0-9+\-\s()]{6,20}$
-            maxLength: 20
-          - type: string
-            maxLength: 0
+          type: string
+          maxLength: 20
         date_of_birth:
           type: string
           format: date
@@ -7209,6 +8019,10 @@ components:
           type: string
           description: Where the employee lives now, when it differs from the permanent
             one.
+        permanent_address_detail:
+          $ref: '#/components/schemas/AddressRequest'
+        current_address_detail:
+          $ref: '#/components/schemas/AddressRequest'
         emergency_contact_name:
           type: string
           maxLength: 120
@@ -7459,6 +8273,14 @@ components:
           format: date
         employment_status:
           $ref: '#/components/schemas/EmploymentStatusEnum'
+        user_id:
+          type: integer
+          readOnly: true
+        roles:
+          type: array
+          items:
+            type: string
+          readOnly: true
         work_location:
           type: string
           maxLength: 120
@@ -7469,7 +8291,18 @@ components:
             maxLength: 20
           - type: string
             maxLength: 0
+        asset_count:
+          type: integer
+          nullable: true
+          description: |-
+            How many assets this person holds.
+
+            Annotated by the list queryset. ``my_team`` reuses this serializer
+            without that annotation, and ``None`` says "not counted here" rather
+            than claiming a zero nobody measured.
+          readOnly: true
       required:
+      - asset_count
       - date_of_joining
       - department_name
       - designation_name
@@ -7479,6 +8312,8 @@ components:
       - id
       - photo_url
       - reporting_manager_name
+      - roles
+      - user_id
     EmployeePhoto:
       type: object
       description: Accepts the upload and echoes back the URL the SPA should render.
@@ -7708,13 +8543,13 @@ components:
       enum:
       - female
       - male
-      - other
+      - transgender
       - undisclosed
       type: string
       description: |-
         * `female` - Female
         * `male` - Male
-        * `other` - Other
+        * `transgender` - Transgender
         * `undisclosed` - Prefer not to say
     Holiday:
       type: object
@@ -7730,7 +8565,6 @@ components:
           maxLength: 150
         description:
           type: string
-          description: Shown to employees wherever the holiday appears.
         is_optional:
           type: boolean
           description: Optional/floating holidays still count as working days.
@@ -7740,6 +8574,7 @@ components:
       required:
       - date
       - day_of_week
+      - description
       - id
       - name
     HolidayRequest:
@@ -7754,12 +8589,13 @@ components:
           maxLength: 150
         description:
           type: string
-          description: Shown to employees wherever the holiday appears.
+          minLength: 1
         is_optional:
           type: boolean
           description: Optional/floating holidays still count as working days.
       required:
       - date
+      - description
       - name
     KindEnum:
       enum:
@@ -8343,6 +9179,17 @@ components:
           description: Unused days roll into next year's allocation.
         is_active:
           type: boolean
+        restricted_to_gender:
+          description: |-
+            Blank means everyone. A restricted type (maternity leave) simply does not exist for anyone else: no balance, no option to apply, no line in any total.
+
+            * `female` - Female
+            * `male` - Male
+            * `transgender` - Transgender
+            * `undisclosed` - Prefer not to say
+          oneOf:
+          - $ref: '#/components/schemas/GenderEnum'
+          - $ref: '#/components/schemas/BlankEnum'
       required:
       - code
       - days_per_year
@@ -8383,6 +9230,17 @@ components:
           description: Unused days roll into next year's allocation.
         is_active:
           type: boolean
+        restricted_to_gender:
+          description: |-
+            Blank means everyone. A restricted type (maternity leave) simply does not exist for anyone else: no balance, no option to apply, no line in any total.
+
+            * `female` - Female
+            * `male` - Male
+            * `transgender` - Transgender
+            * `undisclosed` - Prefer not to say
+          oneOf:
+          - $ref: '#/components/schemas/GenderEnum'
+          - $ref: '#/components/schemas/BlankEnum'
       required:
       - code
       - days_per_year
@@ -8419,6 +9277,16 @@ components:
       required:
       - email
       - password
+    LogoutRequest:
+      type: object
+      description: |-
+        What sign-out sends: the refresh token to retire.
+
+        Optional, because a client that has lost its refresh token must still be
+        able to sign out - the endpoint records the event either way.
+      properties:
+        refresh:
+          type: string
     ModuleEnum:
       enum:
       - authentication
@@ -8639,6 +9507,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Designation'
+    PaginatedEmployeeAssetList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmployeeAsset'
     PaginatedEmployeeDirectoryList:
       type: object
       required:
@@ -9300,6 +10191,49 @@ components:
           type: string
         is_active:
           type: boolean
+    PatchedEmployeeAssetRequest:
+      type: object
+      description: |-
+        Company kit issued to one employee.
+
+        The photo travels in as multipart and back out as a URL, the same shape the
+        profile photo uses, so the SPA has one thing to render rather than two.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: What it is, e.g. "MacBook Pro 14".
+          maxLength: 120
+        brand:
+          type: string
+          minLength: 1
+          description: Who made it, e.g. "Apple".
+          maxLength: 80
+        serial_number:
+          type: string
+          minLength: 1
+          maxLength: 100
+        photo:
+          type: string
+          format: binary
+          writeOnly: true
+          nullable: true
+          description: Optional; stored in Azure Blob Storage in deployed environments.
+        issued_on:
+          type: string
+          format: date
+          nullable: true
+          description: When the kit was handed over.
+        condition:
+          allOf:
+          - $ref: '#/components/schemas/ConditionEnum'
+          description: |-
+            State of the kit when last recorded.
+
+            * `new` - New
+            * `good` - Good
+            * `fair` - Fair
+            * `needs_repair` - Needs repair
     PatchedEmployeeDetailRequest:
       type: object
       description: Full profile, including the nested user identity and documents.
@@ -9334,12 +10268,8 @@ components:
         employment_status:
           $ref: '#/components/schemas/EmploymentStatusEnum'
         phone:
-          oneOf:
-          - type: string
-            pattern: ^[0-9+\-\s()]{6,20}$
-            maxLength: 20
-          - type: string
-            maxLength: 0
+          type: string
+          maxLength: 20
         date_of_birth:
           type: string
           format: date
@@ -9370,6 +10300,10 @@ components:
           type: string
           description: Where the employee lives now, when it differs from the permanent
             one.
+        permanent_address_detail:
+          $ref: '#/components/schemas/AddressRequest'
+        current_address_detail:
+          $ref: '#/components/schemas/AddressRequest'
         emergency_contact_name:
           type: string
           maxLength: 120
@@ -9391,7 +10325,7 @@ components:
           maxLength: 150
         description:
           type: string
-          description: Shown to employees wherever the holiday appears.
+          minLength: 1
         is_optional:
           type: boolean
           description: Optional/floating holidays still count as working days.
@@ -9430,6 +10364,17 @@ components:
           description: Unused days roll into next year's allocation.
         is_active:
           type: boolean
+        restricted_to_gender:
+          description: |-
+            Blank means everyone. A restricted type (maternity leave) simply does not exist for anyone else: no balance, no option to apply, no line in any total.
+
+            * `female` - Female
+            * `male` - Male
+            * `transgender` - Transgender
+            * `undisclosed` - Prefer not to say
+          oneOf:
+          - $ref: '#/components/schemas/GenderEnum'
+          - $ref: '#/components/schemas/BlankEnum'
     PatchedProjectDetailRequest:
       type: object
       properties:
@@ -9988,6 +10933,9 @@ components:
         awaits_finance:
           type: boolean
           readOnly: true
+        self_processed:
+          type: boolean
+          readOnly: true
         processed_by_name:
           type: string
           readOnly: true
@@ -10022,6 +10970,7 @@ components:
       - period_label
       - processed_at
       - processed_by_name
+      - self_processed
       - status
       - status_label
     PayslipApprovalList:
@@ -10061,6 +11010,9 @@ components:
         awaits_finance:
           type: boolean
           readOnly: true
+        self_processed:
+          type: boolean
+          readOnly: true
         processed_by_name:
           type: string
           readOnly: true
@@ -10094,6 +11046,7 @@ components:
       - period_label
       - processed_at
       - processed_by_name
+      - self_processed
       - status
       - status_label
     PayslipApprovalStatusEnum:
@@ -10108,6 +11061,33 @@ components:
         * `processed` - With Finance
         * `approved` - Released
         * `queried` - Queried by Finance
+    PincodeLookup:
+      type: object
+      properties:
+        pincode:
+          type: string
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+          description: Null when the PIN spans states.
+        states:
+          type: array
+          items:
+            type: string
+        areas:
+          type: array
+          items:
+            type: string
+          description: Post office names.
+      required:
+      - areas
+      - city
+      - pincode
+      - state
+      - states
     ProficiencyEnum:
       enum:
       - beginner
@@ -11132,6 +12112,57 @@ components:
           minLength: 1
       required:
       - refresh
+    UpcomingAnniversary:
+      type: object
+      description: 'A work anniversary: the joining date, and the years completed
+        on it.'
+      properties:
+        id:
+          type: integer
+        employee_code:
+          type: string
+        full_name:
+          type: string
+        department_name:
+          type: string
+          nullable: true
+        designation_name:
+          type: string
+          nullable: true
+        photo_url:
+          type: string
+          nullable: true
+        date_of_joining:
+          type: string
+          format: date
+        years:
+          type: integer
+          description: Years completed on this anniversary.
+        day:
+          type: integer
+        month:
+          type: integer
+        celebrated_on:
+          type: string
+          format: date
+        days_until:
+          type: integer
+        is_today:
+          type: boolean
+      required:
+      - celebrated_on
+      - date_of_joining
+      - day
+      - days_until
+      - department_name
+      - designation_name
+      - employee_code
+      - full_name
+      - id
+      - is_today
+      - month
+      - photo_url
+      - years
     UpcomingBirthday:
       type: object
       description: Day and month only - the birth year is deliberately not exposed.
@@ -11277,6 +12308,116 @@ components:
           type: boolean
           description: Set when HR/Admin issues a temporary password; forces a reset
             on next sign-in.
+    UserBulkDeleteRequest:
+      type: object
+      description: |-
+        Which accounts to delete: an explicit list, or every account.
+
+        `all` exists so "delete all users" does not depend on the client having
+        paged through the whole table to collect ids. The caller's own account is
+        never deleted either way - the server skips it and says so.
+      properties:
+        ids:
+          type: array
+          items:
+            type: integer
+        all:
+          type: boolean
+          default: false
+    UserBulkDeleteResult:
+      type: object
+      properties:
+        deleted:
+          type: integer
+        skipped:
+          type: array
+          items:
+            type: string
+      required:
+      - deleted
+      - skipped
+    UserCreate:
+      type: object
+      description: |-
+        A new joiner's account, created by an administrator.
+
+        This is the front door of onboarding: the administrator hands out the email
+        and temporary password, and everything else follows from the first sign-in
+        - change the password, then complete the profile, and only then does the
+        portal open.
+
+        That second step is why an employment record is created alongside the
+        account, with ``profile_completed`` unset. The profile gate deliberately
+        ignores accounts with no employee record (a bare service account is not
+        held up by it), so an account created *without* one would skip the
+        complete-profile step entirely - which is exactly the bug this replaced.
+
+        What it produces is an ordinary portal account, which matters: the password
+        is hashed by ``create_user``, so the normal sign-in check finds it, and
+        ``must_change_password`` is set, so the first sign-in lands on the
+        change-password screen exactly as any joiner does. No second and weaker
+        way in.
+
+        Everyone joins as an employee - that is what being onboarded means, and an
+        account with no role at all sees a sidebar of nothing. Anything more than
+        employee is granted afterwards through the one role control on the table,
+        so the two ways of assigning roles cannot drift apart.
+      properties:
+        email:
+          type: string
+          format: email
+        first_name:
+          type: string
+          maxLength: 100
+        last_name:
+          type: string
+          maxLength: 100
+      required:
+      - email
+    UserCreateRequest:
+      type: object
+      description: |-
+        A new joiner's account, created by an administrator.
+
+        This is the front door of onboarding: the administrator hands out the email
+        and temporary password, and everything else follows from the first sign-in
+        - change the password, then complete the profile, and only then does the
+        portal open.
+
+        That second step is why an employment record is created alongside the
+        account, with ``profile_completed`` unset. The profile gate deliberately
+        ignores accounts with no employee record (a bare service account is not
+        held up by it), so an account created *without* one would skip the
+        complete-profile step entirely - which is exactly the bug this replaced.
+
+        What it produces is an ordinary portal account, which matters: the password
+        is hashed by ``create_user``, so the normal sign-in check finds it, and
+        ``must_change_password`` is set, so the first sign-in lands on the
+        change-password screen exactly as any joiner does. No second and weaker
+        way in.
+
+        Everyone joins as an employee - that is what being onboarded means, and an
+        account with no role at all sees a sidebar of nothing. Anything more than
+        employee is granted afterwards through the one role control on the table,
+        so the two ways of assigning roles cannot drift apart.
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+        temporary_password:
+          type: string
+          writeOnly: true
+          minLength: 1
+        first_name:
+          type: string
+          maxLength: 100
+        last_name:
+          type: string
+          maxLength: 100
+      required:
+      - email
+      - temporary_password
     UserPasswordResetRequest:
       type: object
       properties:

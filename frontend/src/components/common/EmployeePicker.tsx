@@ -105,7 +105,22 @@ export default function EmployeePicker({
     }
     if (chosen?.id === value) return;
     const known = options.find((row) => row.id === value);
-    if (known) setChosen(known);
+    if (known) {
+      setChosen(known);
+      return;
+    }
+    // Not on the first page (it holds twenty people): fetch that one person,
+    // or an existing choice - a current manager, say - shows as a blank box.
+    let cancelled = false;
+    employeesApi
+      .detail(value)
+      .then((person) => {
+        if (!cancelled) setChosen(person as unknown as EmployeeListItem);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
   }, [value, options, chosen]);
 
   return (

@@ -5,11 +5,19 @@ employee_bank_accounts, skills, employee_skills
 """
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import MinLengthValidator, RegexValidator
 from django.db import models
+from django.utils import timezone
 
 from common.enums import EmploymentStatus
 from common.models import AuditableModel, TimeStampedModel
+
+
+def validate_not_in_future(value) -> None:
+    """Nobody is born tomorrow. "Today" is the company's calendar (TIME_ZONE)."""
+    if value and value > timezone.localdate():
+        raise ValidationError("Date of birth cannot be in the future.", code="future_date")
 
 
 class Department(TimeStampedModel):
@@ -60,7 +68,7 @@ class Employee(AuditableModel):
     class Gender(models.TextChoices):
         FEMALE = "female", "Female"
         MALE = "male", "Male"
-        OTHER = "other", "Other"
+        TRANSGENDER = "transgender", "Transgender"
         UNDISCLOSED = "undisclosed", "Prefer not to say"
 
     class BloodGroup(models.TextChoices):
@@ -105,7 +113,7 @@ class Employee(AuditableModel):
         blank=True,
         validators=[RegexValidator(r"^[0-9+\-\s()]{6,20}$", "Enter a valid phone number.")],
     )
-    date_of_birth = models.DateField(null=True, blank=True)
+    date_of_birth = models.DateField(null=True, blank=True, validators=[validate_not_in_future])
     gender = models.CharField(max_length=15, choices=Gender.choices, blank=True)
     blood_group = models.CharField(
         max_length=3,
@@ -126,6 +134,12 @@ class Employee(AuditableModel):
         blank=True,
         help_text="Where the employee lives now, when it differs from the permanent one.",
     )
+    # The parts each address was entered as - country, PIN code, house, street,
+    # landmark, city, state - so it can be edited field by field again. The
+    # text fields above stay the address of record: they are built from these
+    # (see common/address.py) and are what every screen and export shows.
+    permanent_address_detail = models.JSONField(default=dict, blank=True)
+    current_address_detail = models.JSONField(default=dict, blank=True)
     emergency_contact_name = models.CharField(max_length=120, blank=True)
     emergency_contact_phone = models.CharField(max_length=20, blank=True)
     work_location = models.CharField(max_length=120, blank=True)
@@ -180,6 +194,22 @@ class Employee(AuditableModel):
                 break
             seen.update(children)
             frontier = children
+        return seen
+
+    def ancestor_ids(self) -> set[int]:
+        """Everyone above this employee: their manager, that manager's, and so on.
+
+        Making any of them report to this employee would close a loop.
+        """
+        seen: set[int] = set()
+        current = self.reporting_manager_id
+        while current and current not in seen and current != self.pk:
+            seen.add(current)
+            current = (
+                Employee.objects.filter(pk=current)
+                .values_list("reporting_manager_id", flat=True)
+                .first()
+            )
         return seen
 
 

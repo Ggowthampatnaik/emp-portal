@@ -21,7 +21,6 @@ import Chip from '@mui/material/Chip';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
-import LinearProgress from '@mui/material/LinearProgress';
 import Stack from '@mui/material/Stack';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
@@ -35,7 +34,7 @@ import Typography from '@mui/material/Typography';
 import { useCallback, useState } from 'react';
 
 import { useAppDispatch } from '@/app/hooks';
-import { EmptyState, ErrorAlert } from '@/components/common/Feedback';
+import { EmptyState, ErrorAlert, TableSkeleton } from '@/components/common/Feedback';
 import { showToast } from '@/features/ui/uiSlice';
 import { useApiAction, useApiResource } from '@/hooks/useApiResource';
 import { leaveApi } from '@/services/api/services';
@@ -150,7 +149,9 @@ export default function LeaveApprovalsTab({
     }
   };
 
-  if (loading) return <LinearProgress />;
+  // Grey placeholder rows while loading - the table's shape, not a full-width
+  // blue bar under the tabs, which read as the tab underline gone wrong.
+  if (loading) return <TableSkeleton rows={5} columns={6} />;
   if (error) return <ErrorAlert error={error} onRetry={reload} />;
   if (!data?.results.length) {
     return (

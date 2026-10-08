@@ -113,10 +113,51 @@ describe('ChangePasswordPage', () => {
     await user.type(screen.getByLabelText(/current password/i), 'Old@2026');
     await user.type(screen.getByLabelText(/^new password/i), 'Chosen@2026');
     await user.type(screen.getByLabelText(/confirm new password/i), 'Chosen@2027');
-    await user.click(screen.getByRole('button', { name: /change password/i }));
 
-    expect(changePassword).not.toHaveBeenCalled();
+    // Said while typing, and the button stays off until the two agree.
     expect(await screen.findByText(/do not match/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /change password/i })).toBeDisabled();
+    expect(changePassword).not.toHaveBeenCalled();
+  });
+
+  it('shows the rule as one line, then only what is still missing', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    // No checklist - one line of help under the field.
+    expect(screen.queryByRole('list')).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/at least 8 characters, with an uppercase letter/i),
+    ).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/^new password/i), 'chosen');
+    expect(
+      screen.getByText(
+        'Add at least 8 characters, an uppercase letter, a number and a special character (@ # $ % & !).',
+      ),
+    ).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText(/^new password/i));
+    await user.type(screen.getByLabelText(/^new password/i), 'Chosen@2026');
+    expect(screen.queryByText(/^Add /)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['no uppercase', 'chosen@2026'],
+    ['no lowercase', 'CHOSEN@2026'],
+    ['no number', 'Chosen@abcd'],
+    ['no special character', 'Chosen2026'],
+    ['too short', 'Ch@2026'],
+  ])('keeps the button off with %s', async (_, password) => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(screen.getByLabelText(/current password/i), 'Old@2026');
+    await user.type(screen.getByLabelText(/^new password/i), password);
+    await user.type(screen.getByLabelText(/confirm new password/i), password);
+
+    expect(screen.getByRole('button', { name: /change password/i })).toBeDisabled();
+    expect(changePassword).not.toHaveBeenCalled();
   });
 
   it('signs the person out and sends them back to sign in', async () => {

@@ -24,6 +24,7 @@ const LeavePage = lazy(() => import('@/features/leave/LeavePage'));
 const HolidaysPage = lazy(() => import('@/features/leave/HolidaysPage'));
 const OnLeaveTodayPage = lazy(() => import('@/features/leave/OnLeaveTodayPage'));
 const BirthdaysPage = lazy(() => import('@/features/employees/BirthdaysPage'));
+const AnniversariesPage = lazy(() => import('@/features/employees/AnniversariesPage'));
 const TimesheetsPage = lazy(() => import('@/features/timesheet/TimesheetsPage'));
 const ReportsPage = lazy(() => import('@/features/reports/ReportsPage'));
 const ReportRowPage = lazy(() => import('@/features/reports/ReportRowPage'));
@@ -66,6 +67,7 @@ export const router = createBrowserRouter([
           { path: 'leave/requests', element: <LeavePage /> },
           { path: 'holidays', element: <HolidaysPage /> },
           { path: 'birthdays', element: <BirthdaysPage /> },
+          { path: 'anniversaries', element: <AnniversariesPage /> },
           { path: 'leave/approvals', element: <LeavePage /> },
           { path: 'timesheets', element: <TimesheetsPage /> },
           { path: 'timesheets/approvals', element: <TimesheetsPage /> },

@@ -1,5 +1,5 @@
-"""Production settings for a Hostinger VPS: MySQL/MariaDB, uploads on local
-disk, and no Redis.
+"""Production settings for a Hostinger VPS: PostgreSQL (or MySQL/MariaDB),
+uploads on local disk, and no Redis.
 
 Everything in prod.py still applies - HTTPS, HSTS, the refusal to start on the
 repository's signing key or without SMTP. What changes is the infrastructure
@@ -11,20 +11,22 @@ from .prod import *  # noqa: F403
 from .prod import STORAGES, env
 
 # --- Database ---------------------------------------------------------------
-# DATABASE_URL=mysql://user:password@localhost:3306/dbname
-# utf8mb4 so names and notes in any script survive; strict mode so MySQL
-# refuses bad data instead of silently truncating it.
-DATABASES = {
-    "default": {
-        **env.db_url("DATABASE_URL"),
-        "ATOMIC_REQUESTS": True,
-        "CONN_MAX_AGE": env.int("DB_CONN_MAX_AGE", default=60),
-        "OPTIONS": {
-            "charset": "utf8mb4",
-            "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
-        },
-    }
+# DATABASE_URL=postgres://user:password@localhost:5432/dbname   (recommended)
+# DATABASE_URL=mysql://user:password@localhost:3306/dbname      (also works)
+_database = {
+    **env.db_url("DATABASE_URL"),
+    "ATOMIC_REQUESTS": True,
+    "CONN_MAX_AGE": env.int("DB_CONN_MAX_AGE", default=60),
 }
+if "mysql" in _database["ENGINE"]:
+    # utf8mb4 so names and notes in any script survive; strict mode so MySQL
+    # refuses bad data instead of silently truncating it. (PostgreSQL does both
+    # already, and would refuse these options.)
+    _database["OPTIONS"] = {
+        "charset": "utf8mb4",
+        "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
+    }
+DATABASES = {"default": _database}
 
 # --- Uploaded documents stay on the server's disk ----------------------------
 # Django serves them itself, so every link is signed and checked (see

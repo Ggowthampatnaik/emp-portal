@@ -25,6 +25,7 @@ ALLOWED_PREFIXES = (
     "departments/",  # reference data the form shows
     "designations/",
     "skills/",  # the optional skills step
+    "pincodes/",  # filling in an address from its PIN code
 )
 
 #: Endpoints on the caller's *own* employee record that the wizard writes to.

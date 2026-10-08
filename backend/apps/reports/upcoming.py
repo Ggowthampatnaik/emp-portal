@@ -1,4 +1,4 @@
-"""Upcoming birthdays and holidays for the dashboard.
+"""Upcoming birthdays, work anniversaries and holidays for the dashboard.
 
 Both are company-wide: everyone sees the same list whatever their role, the way
 a noticeboard works.
@@ -29,6 +29,7 @@ DEFAULT_LIMIT = 8
 # eight-row one is the misalignment people actually notice.
 DASHBOARD_HOLIDAY_LIMIT = 4
 DASHBOARD_BIRTHDAY_LIMIT = 4
+DASHBOARD_ANNIVERSARY_LIMIT = 4
 #: How far the two dashboard cards look ahead. Both use it, so they always
 #: cover the same stretch of calendar.
 NOTICEBOARD_HORIZON_DAYS = 30
@@ -111,6 +112,68 @@ def upcoming_birthdays(
                 # Day and month only - the birth year is never sent.
                 "day": born.day,
                 "month": born.month,
+                "celebrated_on": celebrated_on,
+                "days_until": days_until,
+                "is_today": days_until == 0,
+            }
+        )
+
+    rows.sort(key=lambda row: (row["days_until"], row["full_name"]))
+    return rows[:limit]
+
+
+def upcoming_anniversaries(
+    request=None,
+    horizon_days: int = DEFAULT_HORIZON_DAYS,
+    limit: int = DEFAULT_LIMIT,
+) -> list[dict]:
+    """Active employees whose work anniversary is coming up.
+
+    The anniversary is the day and month of ``date_of_joining``; ``years`` is
+    how many years they complete on it. Someone who joined less than a year
+    ago has no anniversary yet and is left out - "0 years" is not a milestone.
+    The same rolling window as birthdays, so the cards agree on every day.
+    """
+    today = timezone.localdate()
+    window = _window(today, horizon_days)
+    if not window:
+        return []
+
+    matches = reduce(or_, (Q(jmonth=month, jday=day) for month, day in window))
+    employees = (
+        Employee.objects.filter(
+            employment_status=EmploymentStatus.ACTIVE, date_of_joining__isnull=False
+        )
+        .annotate(jmonth=ExtractMonth("date_of_joining"), jday=ExtractDay("date_of_joining"))
+        .filter(matches)
+        .select_related("user", "department", "designation")
+    )
+
+    rows = []
+    for employee in employees:
+        joined = employee.date_of_joining
+        days_until = window.get((joined.month, joined.day))
+        if days_until is None:
+            continue
+
+        celebrated_on = today + timedelta(days=days_until)
+        years = celebrated_on.year - joined.year
+        if years < 1:
+            continue
+        rows.append(
+            {
+                "id": employee.pk,
+                "employee_code": employee.employee_code,
+                "full_name": employee.full_name,
+                "department_name": employee.department.name if employee.department_id else None,
+                "designation_name": (
+                    employee.designation.name if employee.designation_id else None
+                ),
+                "photo_url": _photo_url(employee, request),
+                "date_of_joining": joined,
+                "years": years,
+                "day": joined.day,
+                "month": joined.month,
                 "celebrated_on": celebrated_on,
                 "days_until": days_until,
                 "is_today": days_until == 0,

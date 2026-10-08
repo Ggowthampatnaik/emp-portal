@@ -4,6 +4,8 @@
  */
 
 export const endpoints = {
+  /** Town, state and areas for an Indian PIN code (common/pincode.py). */
+  pincode: (pin: string) => `/pincodes/${pin}/`,
   auth: {
     entraExchange: '/auth/entra/exchange/',
     tokenRefresh: '/auth/token/refresh/',
@@ -29,6 +31,7 @@ export const endpoints = {
     directoryEntry: (id: number | string) => `/employees/directory/${id}/`,
     bankAccount: (id: number | string) => `/employees/${id}/bank-account/`,
     skills: (id: number | string) => `/employees/${id}/skills/`,
+    directReports: (id: number | string) => `/employees/${id}/direct-reports/`,
     assets: (id: number | string) => `/employees/${id}/assets/`,
     asset: (id: number | string, assetId: number | string) =>
       `/employees/${id}/assets/${assetId}/`,
@@ -109,6 +112,7 @@ export const endpoints = {
   reports: {
     dashboard: '/dashboard/summary/',
     birthdays: '/dashboard/birthdays/',
+    anniversaries: '/dashboard/anniversaries/',
     employees: '/reports/employees/',
     leave: '/reports/leave/',
     timesheet: '/reports/timesheet/',

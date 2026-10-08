@@ -11,7 +11,7 @@
 
 import { MemoryRouter } from 'react-router-dom';
 import { Provider } from 'react-redux';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createStore } from '@/app/store';
@@ -186,5 +186,72 @@ describe('EmployeeDetailPage', () => {
     for (const card of OPERATIONAL) {
       expect(await screen.findByText(card)).toBeInTheDocument();
     }
+  });
+
+  it('will not take a date of birth in the future on My profile', async () => {
+    renderPage(makeUser({ email: SNEHA.email }), { self: true });
+    fireEvent.click(await screen.findByRole('button', { name: /^edit$/i }));
+
+    const dob = screen.getByLabelText(/date of birth/i);
+    // The calendar itself stops at today...
+    expect(dob).toHaveAttribute('max', new Date().toLocaleDateString('en-CA'));
+
+    // ...and a date typed past it is caught at once, with Save held.
+    fireEvent.change(dob, { target: { value: '2999-01-01' } });
+    expect(screen.getByText('Date of birth cannot be in the future.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled();
+
+    fireEvent.change(dob, { target: { value: '1990-05-09' } });
+    expect(screen.queryByText(/cannot be in the future/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled();
+  });
+
+  it('offers four genders - no "Other" and no "Not specified"', async () => {
+    renderPage(makeUser({ email: SNEHA.email }), { self: true });
+    fireEvent.click(await screen.findByRole('button', { name: /^edit$/i }));
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: /gender/i }));
+    const options = (await screen.findAllByRole('option')).map((option) => option.textContent);
+    expect(options).toEqual(['Female', 'Male', 'Transgender', 'Prefer not to say']);
+  });
+
+  it('shows phone numbers spaced out for reading', async () => {
+    me.mockResolvedValue({ ...SNEHA, phone: '+919876543210' });
+    renderPage(makeUser({ email: SNEHA.email }), { self: true });
+
+    expect(await screen.findByText('+91 98765 43210')).toBeInTheDocument();
+  });
+
+  it('splits each phone into a country code and the number when editing', async () => {
+    me.mockResolvedValue({
+      ...SNEHA,
+      phone: '+919876543210',
+      emergency_contact_phone: '+447400123456',
+    });
+    renderPage(makeUser({ email: SNEHA.email }), { self: true });
+    fireEvent.click(await screen.findByRole('button', { name: /^edit$/i }));
+
+    const codes = screen.getAllByRole('combobox', { name: /country code/i });
+    expect(codes.map((box) => (box as HTMLInputElement).value)).toEqual(['+91', '+44']);
+    expect(screen.getByLabelText(/^phone/i)).toHaveValue('9876543210');
+    expect(screen.getByLabelText(/emergency contact phone/i)).toHaveValue('7400123456');
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled();
+  });
+
+  it('flags a number saved before the rules existed, and holds Save', async () => {
+    me.mockResolvedValue({ ...SNEHA, phone: '+919078989889565' });
+    renderPage(makeUser({ email: SNEHA.email }), { self: true });
+    fireEvent.click(await screen.findByRole('button', { name: /^edit$/i }));
+
+    expect(
+      screen.getByText(
+        'Enter a valid 10-digit Indian mobile number, starting with 6, 7, 8 or 9.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/^phone/i), { target: { value: '9876543210' } });
+    expect(screen.queryByText(/valid 10-digit Indian mobile/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled();
   });
 });

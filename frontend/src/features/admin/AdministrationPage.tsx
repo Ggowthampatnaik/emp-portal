@@ -10,7 +10,6 @@ import DialogContent from '@mui/material/DialogContent';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import Alert from '@mui/material/Alert';
-import LinearProgress from '@mui/material/LinearProgress';
 import Stack from '@mui/material/Stack';
 import Tab from '@mui/material/Tab';
 import Table from '@mui/material/Table';
@@ -26,7 +25,7 @@ import Typography from '@mui/material/Typography';
 import { useCallback, useState } from 'react';
 
 import { useAppDispatch, useAppSelector } from '@/app/hooks';
-import { EmptyState, ErrorAlert } from '@/components/common/Feedback';
+import { EmptyState, ErrorAlert, TableSkeleton } from '@/components/common/Feedback';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import PageHeader from '@/components/common/PageHeader';
@@ -260,7 +259,7 @@ function UsersTab() {
       {error && <ErrorAlert error={error} onRetry={reload} />}
       {deleteUsers.error && <ErrorAlert error={deleteUsers.error} />}
       {loading ? (
-        <LinearProgress />
+        <TableSkeleton rows={6} columns={6} />
       ) : !data?.results.length ? (
         <EmptyState title="No accounts match" />
       ) : (

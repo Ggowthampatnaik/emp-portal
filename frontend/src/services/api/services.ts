@@ -56,6 +56,7 @@ import type {
   Timesheet,
   TimesheetEntryPayload,
   TimesheetListItem,
+  UpcomingAnniversary,
   UpcomingBirthday,
   WeekSummary,
 } from '@/types/domain';
@@ -75,6 +76,14 @@ export const employeesApi = {
   detail: (id: number | string) => http.get<EmployeeDetail>(endpoints.employees.detail(id)),
   me: () => http.get<EmployeeDetail>(endpoints.employees.me),
   myTeam: () => http.get<EmployeeListItem[]>(endpoints.employees.myTeam),
+  /** Who reports to this employee. */
+  directReports: (id: number | string) =>
+    http.get<EmployeeListItem[]>(endpoints.employees.directReports(id)),
+  /** Replaces the whole list (employee.edit): those named report to this employee. */
+  setDirectReports: (id: number | string, employeeIds: number[]) =>
+    http.put<EmployeeListItem[]>(endpoints.employees.directReports(id), {
+      employee_ids: employeeIds,
+    }),
   orgChart: () => http.get<OrgNode[]>(endpoints.employees.orgChart),
   directory: (params?: ListParams) =>
     http.get<Paginated<DirectoryEntry>>(endpoints.employees.directory, {
@@ -356,6 +365,10 @@ export const reportsApi = {
   dashboard: () => http.get<DashboardSummary>(endpoints.reports.dashboard),
   birthdays: () =>
     http.get<{ count: number; results: UpcomingBirthday[] }>(endpoints.reports.birthdays),
+  anniversaries: () =>
+    http.get<{ count: number; results: UpcomingAnniversary[] }>(
+      endpoints.reports.anniversaries,
+    ),
   employees: (params?: ListParams) =>
     http.get<ReportResponse>(endpoints.reports.employees, { params: query(params) }),
   leave: (params?: ListParams) =>
@@ -462,4 +475,19 @@ export const financeApi = {
     http.post<PayslipApproval>(endpoints.finance.release(id), { comment }),
   query: (id: number, comment: string) =>
     http.post<PayslipApproval>(endpoints.finance.query(id), { comment }),
+};
+
+/** What the PIN code directory says about an Indian PIN code. */
+export interface PincodeLookup {
+  pincode: string;
+  city: string | null;
+  /** Null when the PIN code spans more than one state - the person picks. */
+  state: string | null;
+  states: string[];
+  /** Post office names: what people call their locality. */
+  areas: string[];
+}
+
+export const addressApi = {
+  lookupPincode: (pin: string) => http.get<PincodeLookup>(endpoints.pincode(pin)),
 };

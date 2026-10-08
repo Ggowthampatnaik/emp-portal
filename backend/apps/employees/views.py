@@ -27,6 +27,7 @@ from apps.employees.serializers import (
     CompleteProfileSerializer,
     DepartmentSerializer,
     DesignationSerializer,
+    DirectReportsSetSerializer,
     EmployeeAssetSerializer,
     EmployeeCreateSerializer,
     EmployeeDetailSerializer,
@@ -50,6 +51,7 @@ from apps.employees.services import (
 from common.audit import record_audit
 from common.enums import AuditAction, EmploymentStatus
 from common.media import media_url
+from common.pagination import LargeResultsSetPagination
 from common.permissions import HasModulePermission
 from common.scoping import can_act_on_employee, employee_profile, scope_employees
 from common.utils import payload_with
@@ -190,9 +192,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = Employee.objects.select_related(
             "user", "department", "designation", "reporting_manager__user"
-        ).prefetch_related(
-            "user__roles"
-        )  # the list rows carry roles
+        ).prefetch_related("user__roles")  # the list rows carry roles
         if self.action in ("list", "org_chart"):
             queryset = scope_employees(queryset, self.request.user)
         if self.action == "list":
@@ -800,6 +800,64 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             "editor works - add, change and remove are one save."
         ),
     )
+    @extend_schema(
+        request=DirectReportsSetSerializer,
+        responses={200: EmployeeListSerializer(many=True)},
+        description=(
+            "GET: who reports to this employee. PUT (employee.edit): replace that "
+            "list - those named report to this employee, anyone dropped is left "
+            "without a manager. A reporting loop is refused."
+        ),
+    )
+    @action(detail=True, methods=["get", "put"], url_path="direct-reports")
+    def direct_reports(self, request: Request, pk: str | None = None) -> Response:
+        manager = self.get_object()
+
+        def current():
+            return (
+                Employee.objects.filter(reporting_manager=manager)
+                .select_related("user", "department", "designation", "reporting_manager__user")
+                .order_by("user__first_name", "user__last_name")
+            )
+
+        if request.method == "GET":
+            return Response(EmployeeListSerializer(current(), many=True).data)
+
+        if not request.user.has_module_permission("employee.edit"):
+            raise PermissionDenied("Only HR and administrators assign reporting lines.")
+
+        serializer = DirectReportsSetSerializer(data=request.data, context={"manager": manager})
+        serializer.is_valid(raise_exception=True)
+        wanted = set(serializer.validated_data["employee_ids"])
+        before = set(current().values_list("pk", flat=True))
+
+        with transaction.atomic():
+            joining = Employee.objects.filter(pk__in=wanted - before).select_related("user")
+            leaving = Employee.objects.filter(pk__in=before - wanted).select_related("user")
+            for employee in joining:
+                previous = employee.reporting_manager_id
+                employee.reporting_manager = manager
+                employee.updated_by = request.user
+                employee.save(update_fields=["reporting_manager", "updated_by", "updated_at"])
+                record_audit(
+                    request,
+                    AuditAction.UPDATE,
+                    employee,
+                    changes={"reporting_manager": [previous, manager.pk]},
+                )
+            for employee in leaving:
+                employee.reporting_manager = None
+                employee.updated_by = request.user
+                employee.save(update_fields=["reporting_manager", "updated_by", "updated_at"])
+                record_audit(
+                    request,
+                    AuditAction.UPDATE,
+                    employee,
+                    changes={"reporting_manager": [manager.pk, None]},
+                )
+
+        return Response(EmployeeListSerializer(current(), many=True).data)
+
     @action(detail=True, methods=["get", "put"], url_path="skills")
     def skills(self, request: Request, pk: str | None = None) -> Response:
         employee = self.get_object()
@@ -957,6 +1015,9 @@ class SkillViewSet(viewsets.ModelViewSet):
 
     serializer_class = SkillSerializer
     permission_classes = [IsAuthenticated, HasModulePermission]
+    # The pickers load the whole vocabulary in one go; it is a lookup list of
+    # a few hundred names, and a 200-row ceiling would silently hide the rest.
+    pagination_class = LargeResultsSetPagination
     ordering = ("name",)
 
     @property

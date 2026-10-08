@@ -37,6 +37,9 @@ azure-storage-blob>=12.25
 # Monitoring (Azure Application Insights via OpenTelemetry)
 azure-monitor-opentelemetry>=1.6
 
+# Phone numbers validated per country (Google's libphonenumber rules)
+phonenumbers>=8.13
+
 # Runtime / config
 django-environ>=0.12
 gunicorn>=23.0

@@ -6,11 +6,14 @@ from django.core.files.storage import default_storage
 from django.db import connection
 from django.http import FileResponse, Http404
 from drf_spectacular.utils import extend_schema
-from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework import serializers, status
+from rest_framework.exceptions import APIException, NotFound
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from common.pincode import LookupUnavailable, lookup_pincode
 
 
 class HealthCheckView(APIView):
@@ -132,3 +135,41 @@ def signed_media(request, name: str):
         raise Http404("No such file.")
 
     return FileResponse(default_storage.open(name, "rb"))
+
+
+class PincodeLookupSerializer(serializers.Serializer):
+    pincode = serializers.CharField()
+    city = serializers.CharField(allow_null=True)
+    state = serializers.CharField(allow_null=True, help_text="Null when the PIN spans states.")
+    states = serializers.ListField(child=serializers.CharField())
+    areas = serializers.ListField(child=serializers.CharField(), help_text="Post office names.")
+
+
+class PincodeLookupUnavailable(APIException):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_code = "pincode_lookup_unavailable"
+    default_detail = "The PIN code directory could not be reached. Fill in the address yourself."
+
+
+class PincodeLookupView(APIView):
+    """``GET /api/v1/pincodes/{pincode}/`` - town, state and areas for an Indian PIN code.
+
+    Used by the address form to fill in the rest once six digits are typed.
+    Open to anyone signed in, including someone still completing their profile.
+    """
+
+    permission_classes = [IsAuthenticated]
+    throttle_scope = "pincode"
+
+    @extend_schema(
+        responses={200: PincodeLookupSerializer},
+        description="Looks up an Indian PIN code in India Post's directory (cached).",
+    )
+    def get(self, request: Request, pincode: str) -> Response:
+        try:
+            found = lookup_pincode(pincode)
+        except LookupUnavailable as exc:
+            raise PincodeLookupUnavailable() from exc
+        if found is None:
+            raise NotFound("No such PIN code.")
+        return Response(PincodeLookupSerializer(found).data)

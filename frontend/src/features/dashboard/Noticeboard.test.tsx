@@ -23,7 +23,12 @@ import Noticeboard from '@/features/dashboard/Noticeboard';
 import { employeesApi } from '@/services/api/services';
 import { makeUser } from '@/test/fixtures';
 import type { PermissionCode } from '@/types/auth';
-import type { DirectoryDetail, UpcomingBirthday, UpcomingHoliday } from '@/types/domain';
+import type {
+  DirectoryDetail,
+  UpcomingAnniversary,
+  UpcomingBirthday,
+  UpcomingHoliday,
+} from '@/types/domain';
 
 function birthday(overrides: Partial<UpcomingBirthday> = {}): UpcomingBirthday {
   return {
@@ -84,6 +89,7 @@ function renderBoard(
   birthdays: UpcomingBirthday[],
   holidays: UpcomingHoliday[],
   permissions?: PermissionCode[],
+  anniversaries: UpcomingAnniversary[] = [],
 ) {
   const user = makeUser(permissions ? { permissions } : {});
   const store = createStore({
@@ -94,7 +100,7 @@ function renderBoard(
   return render(
     <Provider store={store}>
       <MemoryRouter>
-        <Noticeboard birthdays={birthdays} holidays={holidays} />
+        <Noticeboard birthdays={birthdays} anniversaries={anniversaries} holidays={holidays} />
       </MemoryRouter>
     </Provider>,
   );
@@ -137,8 +143,12 @@ describe('Noticeboard', () => {
     renderBoard([birthday()], [holiday()]);
 
     const links = screen.getAllByRole('link', { name: /view more/i });
-    expect(links).toHaveLength(2);
-    expect(links.map((link) => link.getAttribute('href'))).toEqual(['/birthdays', '/holidays']);
+    expect(links).toHaveLength(3);
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      '/birthdays',
+      '/holidays',
+      '/anniversaries',
+    ]);
   });
 
   it('names the window when a card is empty, rather than counting days', () => {
@@ -151,7 +161,7 @@ describe('Noticeboard', () => {
   it('still keeps its footer when a card is empty, so the two stay level', () => {
     renderBoard([], [holiday()]);
 
-    expect(screen.getAllByRole('link', { name: /view more/i })).toHaveLength(2);
+    expect(screen.getAllByRole('link', { name: /view more/i })).toHaveLength(3);
   });
 
   it('shows what is in each list', () => {
@@ -193,4 +203,63 @@ describe('Noticeboard', () => {
       await screen.findByRole('button', { name: /open full record/i }),
     ).toBeInTheDocument();
   });
+
+  it('lists work anniversaries with the years each person completes', () => {
+    renderBoard([], [], undefined, [
+      anniversary({
+        id: 7,
+        full_name: 'Vikram Nair',
+        years: 5,
+        day: 17,
+        month: 10,
+        days_until: 10,
+      }),
+      anniversary({
+        id: 8,
+        full_name: 'Asha Rao',
+        years: 1,
+        day: 7,
+        month: 10,
+        days_until: 0,
+        is_today: true,
+      }),
+    ]);
+
+    const card = screen.getByText('Work anniversaries').closest('.MuiCard-root') as HTMLElement;
+    expect(
+      within(card).getByText('Years at Trigyan, over the next 30 days.'),
+    ).toBeInTheDocument();
+    expect(within(card).getByText(/5 years · joined 17 Oct 2021/)).toBeInTheDocument();
+    expect(within(card).getByText(/1 year · joined 7 Oct 2025/)).toBeInTheDocument();
+    expect(within(card).getByText('🎉 Today')).toBeInTheDocument();
+    expect(within(card).getByText('in 10 days')).toBeInTheDocument();
+  });
+
+  it('says so when nobody has an anniversary coming up', () => {
+    renderBoard([birthday()], [holiday()]);
+
+    expect(screen.getByText('No work anniversaries in the next 30 days.')).toBeInTheDocument();
+  });
 });
+
+function anniversary(overrides: Partial<UpcomingAnniversary> = {}): UpcomingAnniversary {
+  const years = overrides.years ?? 3;
+  const month = overrides.month ?? 10;
+  const day = overrides.day ?? 20;
+  return {
+    id: 1,
+    employee_code: 'TRG0004',
+    full_name: 'Vikram Nair',
+    department_name: 'Engineering',
+    designation_name: 'Engineering Manager',
+    photo_url: null,
+    date_of_joining: `${2026 - years}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+    years,
+    day,
+    month,
+    celebrated_on: `2026-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+    days_until: 13,
+    is_today: false,
+    ...overrides,
+  };
+}
