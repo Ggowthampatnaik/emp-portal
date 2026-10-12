@@ -10,7 +10,7 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '@/app/hooks';
 import LoadingScreen from '@/components/common/LoadingScreen';
 import Sidebar, { SIDEBAR_WIDTH } from '@/components/layout/Sidebar';
-import { ambientBackground } from '@/styles/theme';
+import { ambientBackground, BRAND_BACKDROP, SLATE } from '@/styles/theme';
 import Topbar from '@/components/layout/Topbar';
 import { selectCurrentUser } from '@/features/auth/authSlice';
 import { refreshUnreadCount } from '@/features/notifications/notificationsSlice';
@@ -49,9 +49,21 @@ export default function AppLayout() {
     if (isMobile) dispatch(setSidebarOpen(false));
   }, [isMobile, location.pathname, dispatch]);
 
+  // While a redirect below takes effect, paint the onboarding backdrop rather
+  // than nothing - nothing shows the light page colour for a frame.
+  const onboardingBackdrop = {
+    minHeight: '100vh',
+    backgroundColor: SLATE.groundDark,
+    backgroundImage: BRAND_BACKDROP,
+  } as const;
+
   // A temporary password must be replaced before the portal can be used.
   if (user?.must_change_password && location.pathname !== '/change-password') {
-    return <Navigate to="/change-password" replace />;
+    return (
+      <Box sx={onboardingBackdrop}>
+        <Navigate to="/change-password" replace />
+      </Box>
+    );
   }
 
   // ...and then the profile has to be filled in (F18). The server enforces the
@@ -63,16 +75,26 @@ export default function AppLayout() {
     !user.must_change_password &&
     location.pathname !== '/complete-profile'
   ) {
-    return <Navigate to="/complete-profile" replace />;
+    return (
+      <Box sx={onboardingBackdrop}>
+        <Navigate to="/complete-profile" replace />
+      </Box>
+    );
   }
 
   // Mid-onboarding there is no portal to show a menu for: the sidebar would
   // just be a list of doors the server refuses. Bare pages until the profile
   // is submitted; the chrome appears with the access it describes.
+  //
+  // Dark, like the sign-in page before it and the onboarding pages inside it.
+  // It used to be the light app background with the light loading screen, so
+  // signing in with a temporary password went dark -> pale -> dark while the
+  // page's code arrived: a white flash before "Set your password". While a page
+  // loads here, the backdrop alone shows.
   if (user && (user.must_change_password || !user.profile_completed)) {
     return (
-      <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
-        <Suspense fallback={<LoadingScreen />}>
+      <Box sx={onboardingBackdrop}>
+        <Suspense fallback={null}>
           <Outlet />
         </Suspense>
       </Box>

@@ -35,7 +35,7 @@ import { useAppDispatch } from '@/app/hooks';
 import Logo from '@/components/common/Logo';
 import { ErrorAlert } from '@/components/common/Feedback';
 import PhoneNumberInput from '@/components/common/PhoneNumberInput';
-import { restoreSession } from '@/features/auth/authSlice';
+import { refreshCurrentUser } from '@/features/auth/authSlice';
 import { showToast } from '@/features/ui/uiSlice';
 import { useApiAction, useApiResource } from '@/hooks/useApiResource';
 import { employeesApi } from '@/services/api/services';
@@ -201,9 +201,10 @@ export default function CompleteProfilePage() {
       current_address_detail: livesAt,
     });
     if (saved) {
-      // The gate is keyed on the flag in /auth/me, so the session has to be
-      // refreshed before the portal will let anyone through.
-      await dispatch(restoreSession());
+      // The gate is keyed on the flag in /auth/me, so the user has to be
+      // re-read before the portal will let anyone through. Quietly: the
+      // start-up refresh put "Restoring your session..." on screen in between.
+      await dispatch(refreshCurrentUser());
       dispatch(showToast(`Welcome aboard, ${saved.first_name}.`, 'success'));
       navigate('/', { replace: true });
     }

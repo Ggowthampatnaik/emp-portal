@@ -278,7 +278,7 @@ export default function ExperienceCard({
                   />
                 </Stack>
                 <TextField
-                  label="What you did"
+                  label="Roles and responsibilities"
                   size="small"
                   value={row.description}
                   onChange={(event) => update(index, { description: event.target.value })}

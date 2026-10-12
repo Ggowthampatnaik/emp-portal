@@ -21,7 +21,7 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { useMsal } from '@azure/msal-react';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Navigate, useLocation, Link as RouterLink } from 'react-router-dom';
 
 import { useAppDispatch, useAppSelector } from '@/app/hooks';
@@ -30,6 +30,7 @@ import {
   clearAuthError,
   selectAuthError,
   selectAuthStatus,
+  selectCurrentUser,
   selectIsAuthenticated,
   signIn,
   signInWithEntraToken,
@@ -58,6 +59,7 @@ export default function LoginPage() {
   const dispatch = useAppDispatch();
   const location = useLocation();
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
+  const user = useAppSelector(selectCurrentUser);
   const status = useAppSelector(selectAuthStatus);
   const error = useAppSelector(selectAuthError);
 
@@ -70,11 +72,35 @@ export default function LoginPage() {
   const [touched, setTouched] = useState(false);
 
   const redirectTo = (location.state as { from?: string } | null)?.from ?? '/';
+
+  // A new joiner's next two screens. Fetching their code now, while the form is
+  // being filled in, means "Set your password" can appear straight away rather
+  // than after a pause. Same modules the router loads lazily, so it is cached.
+  useEffect(() => {
+    void import('@/features/auth/ChangePasswordPage');
+    void import('@/features/auth/CompleteProfilePage');
+  }, []);
   // With SSO live the form is hidden, but a break-glass admin can still reach
   // it at /login?local=1 when Microsoft sign-in itself is unavailable.
   const showPasswordForm =
     isPasswordSignInEnabled || new URLSearchParams(location.search).get('local') === '1';
-  if (isAuthenticated) return <Navigate to={redirectTo} replace />;
+  if (isAuthenticated) {
+    // Straight to "Set your password" for a temporary password, rather than via
+    // the dashboard and a second redirect. And while the route changes, paint
+    // this page's backdrop: a bare <Navigate /> draws nothing for a frame, and
+    // the light page colour underneath flashed between two dark screens.
+    return (
+      <Box
+        sx={{
+          minHeight: '100vh',
+          backgroundColor: SLATE.groundDark,
+          backgroundImage: BACKDROP,
+        }}
+      >
+        <Navigate to={user?.must_change_password ? '/change-password' : redirectTo} replace />
+      </Box>
+    );
+  }
 
   const busy = status === 'authenticating';
   const emailInvalid = touched && !email.trim();

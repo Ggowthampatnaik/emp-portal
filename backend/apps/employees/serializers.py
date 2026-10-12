@@ -1,6 +1,8 @@
 """Employee Management serializers."""
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from rest_framework import serializers
 
@@ -247,12 +249,18 @@ class EmployeeSearchSerializer(serializers.ModelSerializer):
 
 
 class EmployeeDirectoryDetailSerializer(EmployeeDirectorySerializer):
-    """One directory card, expanded: the same fields plus who reports to them."""
+    """One directory card, expanded: the same fields plus who reports to them.
+
+    Also the work mobile number. The list leaves it out - it is a bulk dump of
+    everyone - but the "Employee details" pop-up shows it to whoever opens one
+    person's card, by the company's choice, so colleagues can call each other.
+    The rest of the personal fields stay out of both.
+    """
 
     direct_reports = serializers.SerializerMethodField()
 
     class Meta(EmployeeDirectorySerializer.Meta):
-        fields = (*EmployeeDirectorySerializer.Meta.fields, "direct_reports")
+        fields = (*EmployeeDirectorySerializer.Meta.fields, "phone", "direct_reports")
         read_only_fields = fields
 
     def get_direct_reports(self, obj: Employee) -> list[dict]:
@@ -292,6 +300,26 @@ class EmployeeDocumentSerializer(serializers.ModelSerializer):
         if not title:
             raise serializers.ValidationError("Give the document a name.")
         return title
+
+    def validate(self, attrs: dict) -> dict:
+        """One 10th, 12th, Bachelor's and ID proof per person."""
+        kind = attrs.get("document_type")
+        employee = attrs.get("employee")
+        if (
+            kind in EmployeeDocument.SINGLE_COPY_TYPES
+            and employee is not None
+            and employee.documents.filter(document_type=kind).exists()
+        ):
+            label = EmployeeDocument.DocumentType(kind).label
+            raise serializers.ValidationError(
+                {
+                    "document_type": (
+                        f"A {label} is already uploaded. Only one is allowed - "
+                        "delete the existing one to upload a replacement."
+                    )
+                }
+            )
+        return attrs
 
     def validate_file(self, value):
         """PDF only, and small enough to be a document rather than a scan dump.
@@ -570,6 +598,20 @@ class EmployeeCreateSerializer(serializers.ModelSerializer):
         value = value.lower().strip()
         if User.objects.filter(email=value).exists():
             raise serializers.ValidationError("An account with this email already exists.")
+        return value
+
+    def validate_temporary_password(self, value: str) -> str:
+        """Held to the portal's password rule, like any other password.
+
+        It is a real credential until the joiner replaces it - and a weak one
+        handed out by email is the easiest way into a brand-new account. The
+        same validators as Set your password: length, common-password list and
+        the upper / lower / number / special-character rule.
+        """
+        try:
+            validate_password(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages)) from exc
         return value
 
     def validate_roles(self, value: list[str]) -> list[str]:

@@ -63,7 +63,10 @@ export function useApiResource<T>(
   }, deps);
 
   const setData = useCallback((value: T | null) => {
-    setState((prev) => ({ ...prev, data: value }));
+    // Real data replaces whatever the last load said. Without this, a card
+    // whose first load answered 404 ("nothing recorded yet") kept that error
+    // after its first save and went on showing the empty state until a reload.
+    setState((prev) => ({ ...prev, data: value, error: value === null ? prev.error : null }));
   }, []);
 
   return { ...state, reload: load, setData };

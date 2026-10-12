@@ -233,6 +233,18 @@ class EmployeeDocument(TimeStampedModel):
         CONTRACT = "contract", "Employment contract"
         OTHER = "other", "Other"
 
+    #: Categories a person has exactly one of: a second upload is refused until
+    #: the first is deleted. Enforced on upload rather than by a database
+    #: constraint, because records from before the rule may already hold two.
+    SINGLE_COPY_TYPES = frozenset(
+        {
+            DocumentType.TENTH,
+            DocumentType.INTERMEDIATE,
+            DocumentType.BACHELORS,
+            DocumentType.ID_PROOF,
+        }
+    )
+
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name="documents")
     document_type = models.CharField(max_length=20, choices=DocumentType.choices)
     title = models.CharField(max_length=200)

@@ -20,7 +20,7 @@ import Typography from '@mui/material/Typography';
 import { useRef, useState, type ChangeEvent } from 'react';
 
 import { useAppDispatch } from '@/app/hooks';
-import { restoreSession } from '@/features/auth/authSlice';
+import { refreshCurrentUser } from '@/features/auth/authSlice';
 import { showToast } from '@/features/ui/uiSlice';
 import { useApiAction } from '@/hooks/useApiResource';
 import { employeesApi } from '@/services/api/services';
@@ -86,7 +86,7 @@ export default function ProfilePhoto({
     if (result) {
       onChanged(result.photo_url);
       dispatch(showToast('Profile photo updated.', 'success'));
-      if (isSelf) void dispatch(restoreSession());
+      if (isSelf) void dispatch(refreshCurrentUser());
     }
   };
 
@@ -95,7 +95,7 @@ export default function ProfilePhoto({
     if (result !== undefined) {
       onChanged(null);
       dispatch(showToast('Profile photo removed.', 'info'));
-      if (isSelf) void dispatch(restoreSession());
+      if (isSelf) void dispatch(refreshCurrentUser());
     }
   };
 

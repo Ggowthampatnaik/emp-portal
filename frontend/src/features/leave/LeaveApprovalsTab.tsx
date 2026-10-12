@@ -192,7 +192,7 @@ export default function LeaveApprovalsTab({
               <TableCell align="center">Balance</TableCell>
               {stage === 'hr' && <TableCell>Manager</TableCell>}
               <TableCell>Reason</TableCell>
-              <TableCell align="right">Decision</TableCell>
+              <TableCell>Decision</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -238,8 +238,8 @@ export default function LeaveApprovalsTab({
                     {row.reason}
                   </Typography>
                 </TableCell>
-                <TableCell align="right">
-                  <Stack direction="row" spacing={1} justifyContent="flex-end">
+                <TableCell>
+                  <Stack direction="row" spacing={1}>
                     <Button
                       size="small"
                       variant="contained"

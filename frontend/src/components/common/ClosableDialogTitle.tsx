@@ -11,7 +11,6 @@ import CloseIcon from '@mui/icons-material/Close';
 import DialogTitle from '@mui/material/DialogTitle';
 import IconButton from '@mui/material/IconButton';
 import Stack from '@mui/material/Stack';
-import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import type { ReactNode } from 'react';
 
@@ -45,28 +44,27 @@ export default function ClosableDialogTitle({
         </div>
       </Stack>
 
-      <Tooltip title="Close">
-        <span>
-          <IconButton
-            onClick={onClose}
-            disabled={disabled}
-            aria-label="Close"
-            size="small"
-            // Neutral, not red: closing a dialog is not destructive, and
-            // error colouring on every popup in the portal made Cancel read
-            // as if it would discard something irreversible.
-            sx={{
-              position: 'absolute',
-              right: 12,
-              top: 12,
-              color: 'text.secondary',
-              '&:hover': { backgroundColor: 'action.hover', color: 'text.primary' },
-            }}
-          >
-            <CloseIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
+      {/* No tooltip: it hung off a wrapper at the left of the title while the
+          button sits in the right corner, so "Close" appeared on the wrong
+          side. The cross needs no caption; aria-label still names it. */}
+      <IconButton
+        onClick={onClose}
+        disabled={disabled}
+        aria-label="Close"
+        size="small"
+        // Neutral, not red: closing a dialog is not destructive, and
+        // error colouring on every popup in the portal made Cancel read
+        // as if it would discard something irreversible.
+        sx={{
+          position: 'absolute',
+          right: 12,
+          top: 12,
+          color: 'text.secondary',
+          '&:hover': { backgroundColor: 'action.hover', color: 'text.primary' },
+        }}
+      >
+        <CloseIcon fontSize="small" />
+      </IconButton>
     </DialogTitle>
   );
 }

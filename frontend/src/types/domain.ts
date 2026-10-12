@@ -158,6 +158,8 @@ export interface DirectReport {
 
 /** One directory entry, expanded with the people who report to them. */
 export interface DirectoryDetail extends DirectoryEntry {
+  /** Mobile number in E.164, or '' when none is recorded. Not on the list rows. */
+  phone: string;
   direct_reports: DirectReport[];
 }
 
@@ -781,6 +783,8 @@ export interface UpcomingAnniversary {
   celebrated_on: string;
   days_until: number;
   is_today: boolean;
+  /** In the current calendar month; false for rows that top up a quiet month. */
+  this_month: boolean;
 }
 
 export interface UpcomingHoliday {

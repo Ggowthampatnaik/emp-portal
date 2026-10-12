@@ -401,18 +401,12 @@ export const adminApi = {
 
   users: (params?: ListParams) =>
     http.get<Paginated<AdminUser>>(endpoints.administration.users, { params: query(params) }),
-  createUser: (body: {
-    email: string;
-    temporary_password: string;
-    first_name?: string;
-    last_name?: string;
-  }) => http.post<AdminUser>(endpoints.administration.users, body),
   updateUser: (id: number, body: Partial<AdminUser>) =>
     http.patch<AdminUser>(endpoints.administration.userDetail(id), body),
   setRoles: (id: number, roles: string[]) =>
     http.post<AdminUser>(`${endpoints.administration.userDetail(id)}roles/`, { roles }),
   deleteUsers: (body: { ids?: number[]; all?: boolean }) =>
-    http.post<{ deleted: number; skipped: string[] }>(
+    http.post<{ deleted: number; deactivated: number; skipped: string[] }>(
       endpoints.administration.deleteUsers,
       body,
     ),

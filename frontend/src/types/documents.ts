@@ -57,6 +57,17 @@ export const DOCUMENT_TYPES: DocumentCategory[] = [
   { value: 'other', label: 'Other relevant document' },
 ];
 
+/**
+ * Categories a person has exactly one of. Matches
+ * `EmployeeDocument.SINGLE_COPY_TYPES` on the server, which refuses a second.
+ */
+export const SINGLE_COPY_TYPES: ReadonlySet<string> = new Set([
+  'tenth',
+  'intermediate',
+  'bachelors',
+  'id_proof',
+]);
+
 /** Labels for anything stored under a legacy type, so nothing renders as a slug. */
 const LEGACY_LABELS: Record<string, string> = {
   education: 'Education certificate',

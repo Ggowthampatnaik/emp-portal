@@ -78,6 +78,25 @@ export const restoreSession = createAsyncThunk<
   }
 });
 
+/**
+ * Re-reads the signed-in user, quietly. For use *during* a session - after the
+ * profile is completed, or your own photo changes - where restoreSession is the
+ * wrong tool: that one is the start-up check, and flips `initialising`, which
+ * swaps the whole app for "Restoring your session..." while it runs. Here the
+ * page stays as it is and only the user record updates. A failure leaves the
+ * session alone; the next request will sort out an expired token anyway.
+ */
+export const refreshCurrentUser = createAsyncThunk<CurrentUser, void, { rejectValue: string }>(
+  'auth/refreshCurrentUser',
+  async (_, { rejectWithValue }) => {
+    try {
+      return await authService.fetchCurrentUser();
+    } catch (error) {
+      return rejectWithValue(toApiError(error).message);
+    }
+  },
+);
+
 export const signOut = createAsyncThunk<void>('auth/signOut', async () => {
   try {
     await authService.logout();
@@ -163,6 +182,9 @@ const authSlice = createSlice({
         state.user = action.payload;
         state.status = action.payload ? 'authenticated' : 'idle';
         state.initialising = false;
+      })
+      .addCase(refreshCurrentUser.fulfilled, (state, action) => {
+        state.user = action.payload;
       })
       .addCase(restoreSession.rejected, (state) => {
         state.user = null;

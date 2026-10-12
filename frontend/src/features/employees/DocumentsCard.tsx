@@ -283,6 +283,7 @@ export default function DocumentsCard({
       {adding && (
         <DocumentUploadDialog
           employeeId={employeeId}
+          uploadedTypes={documents.map((row) => row.document_type)}
           onClose={() => setAdding(false)}
           onSaved={() => {
             setAdding(false);

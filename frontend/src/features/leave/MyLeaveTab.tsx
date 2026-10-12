@@ -1,6 +1,6 @@
 /** My leave requests, with cancellation where the workflow still allows it. */
 
-import Button from '@mui/material/Button';
+import Chip from '@mui/material/Chip';
 import Collapse from '@mui/material/Collapse';
 import IconButton from '@mui/material/IconButton';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
@@ -18,7 +18,7 @@ import { Fragment, useCallback, useState } from 'react';
 
 import { useAppDispatch } from '@/app/hooks';
 import { EmptyState, ErrorAlert, TableSkeleton } from '@/components/common/Feedback';
-import StatusChip from '@/components/common/StatusChip';
+import { StatusText } from '@/components/common/StatusChip';
 import LeaveStageTimeline from '@/features/leave/LeaveStageTimeline';
 import { showToast } from '@/features/ui/uiSlice';
 import { useApiAction, useApiResource } from '@/hooks/useApiResource';
@@ -65,32 +65,55 @@ export default function MyLeaveTab({
     );
   }
 
+  // The Cancel column only appears when a request on this page can still be
+  // cancelled; otherwise it was an empty strip down the right of the table.
+  const anyCancellable = data.results.some((row) => row.can_cancel);
+  const toggle = (id: number) => setExpanded((open) => (open === id ? null : id));
+  const widths = anyCancellable
+    ? { type: '20%', date: '15%', days: '10%', status: '15%' }
+    : { type: '23%', date: '17%', days: '12%', status: '17%' };
+
   return (
     <>
       {cancel.error && <ErrorAlert error={cancel.error} />}
       <TableContainer sx={{ overflowX: 'auto' }}>
-        <Table size="small">
+        {/* Fixed, evenly spread columns, all reading from the left. Decided by
+            is last and holds only a name, so it gets just enough width and the
+            spare goes between the other columns, not into a gap on the right. */}
+        <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 900 }}>
           <TableHead>
             <TableRow>
-              <TableCell width={48} />
-              <TableCell>Type</TableCell>
-              <TableCell>From</TableCell>
-              <TableCell>To</TableCell>
-              <TableCell align="right">Days</TableCell>
-              <TableCell>Status</TableCell>
+              <TableCell sx={{ width: 56 }} />
+              <TableCell sx={{ width: widths.type }}>Type</TableCell>
+              <TableCell sx={{ width: widths.date }}>From</TableCell>
+              <TableCell sx={{ width: widths.date }}>To</TableCell>
+              <TableCell sx={{ width: widths.days }}>Days</TableCell>
+              <TableCell sx={{ width: widths.status }}>Status</TableCell>
               <TableCell>Decided by</TableCell>
-              <TableCell align="right" />
+              {anyCancellable && <TableCell align="right" sx={{ width: 110 }} />}
             </TableRow>
           </TableHead>
           <TableBody>
             {data.results.map((row) => (
               <Fragment key={row.id}>
-                <TableRow hover>
+                {/* The whole row opens its details, not just the arrow. */}
+                <TableRow
+                  hover
+                  onClick={() => toggle(row.id)}
+                  sx={{ cursor: 'pointer' }}
+                  selected={expanded === row.id}
+                >
                   <TableCell>
                     <IconButton
                       size="small"
-                      onClick={() => setExpanded(expanded === row.id ? null : row.id)}
+                      onClick={(event) => {
+                        // The row toggles too; without this it would open and
+                        // shut again in the same click.
+                        event.stopPropagation();
+                        toggle(row.id);
+                      }}
                       aria-label="Toggle details"
+                      aria-expanded={expanded === row.id}
                     >
                       {expanded === row.id ? (
                         <KeyboardArrowUpIcon />
@@ -102,28 +125,37 @@ export default function MyLeaveTab({
                   <TableCell>{row.leave_type_name}</TableCell>
                   <TableCell>{formatDate(row.start_date)}</TableCell>
                   <TableCell>{formatDate(row.end_date)}</TableCell>
-                  <TableCell align="right">{row.total_days}</TableCell>
+                  <TableCell>{row.total_days}</TableCell>
                   <TableCell>
-                    <StatusChip status={row.status} />
+                    <StatusText status={row.status} />
                   </TableCell>
                   <TableCell>{row.decided_by_name ?? '-'}</TableCell>
-                  <TableCell align="right">
-                    {row.can_cancel && (
-                      <Button
-                        size="small"
-                        color="warning"
-                        onClick={() => handleCancel(row)}
-                        disabled={cancel.busy}
-                      >
-                        Cancel
-                      </Button>
-                    )}
-                  </TableCell>
+                  {anyCancellable && (
+                    <TableCell align="right">
+                      {row.can_cancel && (
+                        // The one thing in the row you can press, so it keeps a
+                        // button shape while the statuses are plain text; red.
+                        <Chip
+                          size="small"
+                          color="error"
+                          label="Cancel"
+                          sx={{ width: 79 }}
+                          onClick={(event) => {
+                            // Cancelling is not a request to see the details.
+                            event.stopPropagation();
+                            void handleCancel(row);
+                          }}
+                          disabled={cancel.busy}
+                          aria-label={`Cancel the ${row.leave_type_name} request`}
+                        />
+                      )}
+                    </TableCell>
+                  )}
                 </TableRow>
                 <TableRow>
-                  <TableCell colSpan={8} sx={{ py: 0, borderBottom: 0 }}>
+                  <TableCell colSpan={anyCancellable ? 8 : 7} sx={{ py: 0, borderBottom: 0 }}>
                     <Collapse in={expanded === row.id} unmountOnExit>
-                      <Stack spacing={1} sx={{ py: 2, pl: 6 }}>
+                      <Stack spacing={1} sx={{ py: 2, pl: 7 }}>
                         <LeaveStageTimeline request={row} />
                         <Typography variant="body2">
                           <strong>Reason:</strong> {row.reason}

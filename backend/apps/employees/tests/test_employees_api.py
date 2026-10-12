@@ -126,7 +126,8 @@ def test_an_employee_cannot_report_to_themselves(auth_client, org):
 # Onboarding and offboarding
 # ---------------------------------------------------------------------------
 @pytest.mark.django_db
-def test_hr_onboards_an_employee_with_an_account(auth_client, org, department, designation):
+def test_hr_can_no_longer_onboard(auth_client, org, department, designation):
+    """Onboarding moved to Admin (Administration -> Users); HR is refused."""
     response = auth_client(org["hr"]).post(
         "/api/v1/employees/",
         {
@@ -137,23 +138,17 @@ def test_hr_onboards_an_employee_with_an_account(auth_client, org, department, d
             "temporary_password": "Welcome@2026",
             "department": department.pk,
             "designation": designation.pk,
-            "reporting_manager": org["manager"].pk,
             "date_of_joining": "2026-01-05",
             "roles": ["employee"],
         },
     )
-    assert response.status_code == 201, response.data
-
-    employee = Employee.objects.get(employee_code="TRG0099")
-    assert employee.user.email == "nikhil.verma@trigyan.io"
-    assert employee.user.must_change_password is True
-    assert employee.user.check_password("Welcome@2026")
-    assert sorted(employee.user.role_slugs) == ["employee"]
+    assert response.status_code == 403
+    assert not Employee.objects.filter(employee_code="TRG0099").exists()
 
 
 @pytest.mark.django_db
 def test_onboarding_rejects_a_duplicate_email(auth_client, org, department):
-    response = auth_client(org["hr"]).post(
+    response = auth_client(org["admin"]).post(
         "/api/v1/employees/",
         {
             "employee_code": "TRG0098",
@@ -428,7 +423,7 @@ def test_the_org_chart_carries_a_photo_for_each_node(auth_client, org):
 def test_onboarding_cannot_hand_out_super_admin(auth_client, org, department):
     """`employee.create` must never be a back door past every permission check:
     Super Admin is granted from Administration, by a Super Admin, and nowhere else."""
-    response = auth_client(org["hr"]).post(
+    response = auth_client(org["admin"]).post(
         "/api/v1/employees/",
         {
             "employee_code": "TRG0097",
@@ -478,3 +473,120 @@ def test_excluding_yourself_is_harmless_without_an_employee_record(auth_client, 
     response = auth_client(user).get("/api/v1/employees/", {"exclude_self": "1"})
 
     assert response.status_code == 200
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("kind", ["tenth", "intermediate", "bachelors", "id_proof"])
+def test_a_single_copy_category_takes_only_one_document(auth_client, org, kind):
+    client = auth_client(org["employee"])
+    assert upload(client, org["employee"], document_type=kind).status_code == 201
+
+    second = upload(client, org["employee"], document_type=kind, file=pdf("again.pdf"))
+
+    assert second.status_code == 400
+    assert "already uploaded" in str(second.data["error"]["details"]["document_type"])
+    assert org["employee"].documents.filter(document_type=kind).count() == 1
+
+
+@pytest.mark.django_db
+def test_hr_is_held_to_the_same_one_copy_rule(auth_client, org):
+    upload(auth_client(org["employee"]), org["employee"])
+
+    response = upload(auth_client(org["hr"]), org["employee"], file=pdf("hr.pdf"))
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_deleting_the_copy_frees_the_slot_for_a_replacement(auth_client, org):
+    client = auth_client(org["employee"])
+    first = upload(client, org["employee"])
+    client.delete(f"/api/v1/employees/{org['employee'].pk}/documents/{first.data['id']}/")
+
+    assert upload(client, org["employee"], file=pdf("new.pdf")).status_code == 201
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("kind", ["masters", "skill_certificate", "experience_letter", "other"])
+def test_other_categories_still_take_several(auth_client, org, kind):
+    client = auth_client(org["employee"])
+    upload(client, org["employee"], document_type=kind)
+
+    assert (
+        upload(client, org["employee"], document_type=kind, file=pdf("two.pdf")).status_code == 201
+    )
+
+
+@pytest.mark.django_db
+def test_one_persons_certificate_does_not_block_anothers(auth_client, org):
+    upload(auth_client(org["employee"]), org["employee"])
+
+    assert upload(auth_client(org["peer"]), org["peer"]).status_code == 201
+
+
+@pytest.mark.django_db
+def test_admin_onboards_an_employee_with_an_account(auth_client, org, department, designation):
+    """Administration -> Users carries the same Add employee form HR has."""
+    response = auth_client(org["admin"]).post(
+        "/api/v1/employees/",
+        {
+            "employee_code": "TRG0098",
+            "first_name": "Meghna",
+            "last_name": "Rao",
+            "email": "meghna.rao@trigyan.io",
+            "temporary_password": "Welcome@2026",
+            "department": department.pk,
+            "designation": designation.pk,
+            "reporting_manager": org["manager"].pk,
+            "date_of_joining": "2026-01-05",
+            "roles": ["employee", "manager"],
+        },
+    )
+    assert response.status_code == 201, response.data
+
+    employee = Employee.objects.get(employee_code="TRG0098")
+    assert employee.user.must_change_password is True
+    assert sorted(employee.user.role_slugs) == ["employee", "manager"]
+
+
+@pytest.mark.django_db
+def test_admin_cannot_hand_out_super_admin_either(auth_client, org, department):
+    response = auth_client(org["admin"]).post(
+        "/api/v1/employees/",
+        {
+            "employee_code": "TRG0096",
+            "first_name": "Root",
+            "last_name": "Kit",
+            "email": "root.kit2@trigyan.io",
+            "temporary_password": "Welcome@2026",
+            "department": department.pk,
+            "date_of_joining": "2026-01-05",
+            "roles": ["employee", "super_admin"],
+        },
+    )
+    assert response.status_code == 400, response.data
+    assert not Employee.objects.filter(employee_code="TRG0096").exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "weak",
+    ["Short@1", "welcome@2026", "WELCOME@2026", "Welcome@abcd", "Welcome2026"],
+    ids=["too-short", "no-uppercase", "no-lowercase", "no-number", "no-special"],
+)
+def test_a_weak_temporary_password_is_refused(auth_client, org, department, weak):
+    """The temporary password meets the same rule as any password in the portal."""
+    response = auth_client(org["admin"]).post(
+        "/api/v1/employees/",
+        {
+            "employee_code": "TRG0094",
+            "first_name": "Weak",
+            "last_name": "Password",
+            "email": "weak.password@trigyan.io",
+            "temporary_password": weak,
+            "department": department.pk,
+            "date_of_joining": "2026-01-05",
+        },
+    )
+    assert response.status_code == 400, response.data
+    assert "temporary_password" in response.data["error"]["details"]
+    assert not Employee.objects.filter(employee_code="TRG0094").exists()

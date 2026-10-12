@@ -14,7 +14,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createStore } from '@/app/store';
 import { makeUser } from '@/test/fixtures';
-import type { PermissionCode } from '@/types/auth';
+import type { PermissionCode, RoleSlug } from '@/types/auth';
 
 const pendingApprovals = vi.fn();
 const submissionCounts = vi.fn();
@@ -40,12 +40,16 @@ const EMPLOYEE: PermissionCode[] = ['timesheet.submit', 'timesheet.view_self'];
 const MANAGER: PermissionCode[] = [...EMPLOYEE, 'timesheet.view_team', 'timesheet.approve'];
 const HR: PermissionCode[] = [...MANAGER, 'timesheet.view_all'];
 
-function renderAs(permissions: PermissionCode[], path = '/timesheets') {
+function renderAs(
+  permissions: PermissionCode[],
+  path = '/timesheets',
+  roles: RoleSlug[] = ['employee'],
+) {
   render(
     <Provider
       store={createStore({
         auth: {
-          user: makeUser({ permissions }),
+          user: makeUser({ permissions, roles }),
           status: 'authenticated',
           error: null,
         } as never,
@@ -101,6 +105,27 @@ describe('TimesheetsPage', () => {
 
     const tab = await screen.findByRole('tab', { name: /submissions/i });
     expect(within(tab).queryByText('0')).not.toBeInTheDocument();
+  });
+
+  it('keeps Submissions from an Admin, who can read every sheet but chases nobody', async () => {
+    renderAs([...EMPLOYEE, 'timesheet.view_all'], '/timesheets', ['employee', 'admin']);
+
+    expect(await screen.findByRole('tab', { name: /this week/i })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /submissions/i })).not.toBeInTheDocument();
+    // Not even the badge count is asked for.
+    expect(submissionCounts).not.toHaveBeenCalled();
+  });
+
+  it('still gives Submissions to someone who is both Admin and HR', async () => {
+    renderAs(HR, '/timesheets', ['employee', 'admin', 'hr']);
+
+    expect(await screen.findByRole('tab', { name: /submissions/i })).toBeInTheDocument();
+  });
+
+  it('still gives Submissions to a Super Admin', async () => {
+    renderAs([], '/timesheets', ['employee', 'super_admin']);
+
+    expect(await screen.findByRole('tab', { name: /submissions/i })).toBeInTheDocument();
   });
 
   it('gives a plain employee neither queue', async () => {

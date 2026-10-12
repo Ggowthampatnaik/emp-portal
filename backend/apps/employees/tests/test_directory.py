@@ -147,8 +147,19 @@ def test_an_entry_without_reports_returns_an_empty_list(auth_client, org):
 
 @pytest.mark.django_db
 def test_the_expanded_entry_still_hides_personal_data(auth_client, org):
+    """Everything personal except the mobile number, which the pop-up shows."""
     response = auth_client(org["employee"]).get(f"{URL}{org['manager'].pk}/")
-    assert PERSONAL_FIELDS.isdisjoint(response.data.keys())
+    assert (PERSONAL_FIELDS - {"phone"}).isdisjoint(response.data.keys())
+
+
+@pytest.mark.django_db
+def test_the_expanded_entry_carries_the_mobile_number(auth_client, org):
+    manager = org["manager"]
+    manager.phone = "+919876543210"
+    manager.save(update_fields=["phone"])
+
+    response = auth_client(org["employee"]).get(f"{URL}{manager.pk}/")
+    assert response.data["phone"] == "+919876543210"
 
 
 @pytest.mark.django_db

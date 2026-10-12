@@ -19,23 +19,29 @@ import PayrollRunsTab from '@/features/payroll/PayrollRunsTab';
 import ProjectPayslipsTab from '@/features/payroll/ProjectPayslipsTab';
 import SalaryStructuresTab from '@/features/payroll/SalaryStructuresTab';
 import { usePermissions } from '@/hooks/usePermissions';
+import { ROLES } from '@/types/auth';
 
 export default function PayrollPage() {
-  const { can, canAny } = usePermissions();
+  const { can, canAny, roles, isSuperAdmin } = usePermissions();
   const [tab, setTab] = useState(0);
+
+  // Payroll runs and By project are not shown to Admin (the company's call):
+  // Admin keeps only their own payslips here. Someone who is Admin *and* HR
+  // keeps them, as does Super Admin - who is then the one who approves a run.
+  const adminOnly = roles.includes(ROLES.ADMIN) && !roles.includes(ROLES.HR) && !isSuperAdmin;
 
   const tabs = [
     { label: 'My payslips', show: true, render: () => <MyPayslipsTab /> },
     {
       label: 'Payroll runs',
-      show: canAny('payroll.process', 'payroll.approve', 'payroll.view_all'),
+      show: !adminOnly && canAny('payroll.process', 'payroll.approve', 'payroll.view_all'),
       render: () => <PayrollRunsTab />,
     },
     {
       // HR's other question: what is a project costing, rather than what did
       // this month cost.
       label: 'By project',
-      show: can('payroll.view_all'),
+      show: !adminOnly && can('payroll.view_all'),
       render: () => <ProjectPayslipsTab />,
     },
     {

@@ -28,10 +28,11 @@ from apps.reports.serializers import (
     ReportResponseSerializer,
 )
 from apps.reports.upcoming import (
-    DASHBOARD_ANNIVERSARY_LIMIT,
+    DASHBOARD_ANNIVERSARY_ROWS,
     DASHBOARD_BIRTHDAY_LIMIT,
     DASHBOARD_HOLIDAY_LIMIT,
     NOTICEBOARD_HORIZON_DAYS,
+    anniversaries_this_month,
     clamp_horizon,
     upcoming_anniversaries,
     upcoming_birthdays,
@@ -424,10 +425,11 @@ class DashboardSummaryView(APIView):
                 limit=DASHBOARD_BIRTHDAY_LIMIT,
                 horizon_days=NOTICEBOARD_HORIZON_DAYS,
             ),
-            "upcoming_anniversaries": upcoming_anniversaries(
-                request,
-                limit=DASHBOARD_ANNIVERSARY_LIMIT,
-                horizon_days=NOTICEBOARD_HORIZON_DAYS,
+            # Anniversaries are the exception: the card is "this month", all of
+            # it - the page shows two and counts the rest. A month with fewer
+            # than two is topped up with the next ones coming.
+            "upcoming_anniversaries": anniversaries_this_month(
+                request, at_least=DASHBOARD_ANNIVERSARY_ROWS
             ),
             "upcoming_holidays": upcoming_holidays(
                 limit=DASHBOARD_HOLIDAY_LIMIT,

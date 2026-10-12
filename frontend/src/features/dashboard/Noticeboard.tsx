@@ -48,13 +48,21 @@ const MONTHS = [
   'Dec',
 ];
 
+/** The anniversary card shows this many of the month's; "View more" has the rest. */
+const ANNIVERSARY_ROWS = 2;
+
 /** Both cards lead with something this wide, so their text columns align. */
 const BADGE = 44;
 
-/** "Today", "Tomorrow", or "in N days" — the phrasing people actually use. */
+/**
+ * "Today", "Tomorrow", "in N days" — the phrasing people actually use. The
+ * anniversary card also keeps this month's earlier ones: "Yesterday", "N days ago".
+ */
 function whenLabel(daysUntil: number): string {
   if (daysUntil === 0) return 'Today';
   if (daysUntil === 1) return 'Tomorrow';
+  if (daysUntil === -1) return 'Yesterday';
+  if (daysUntil < 0) return `${-daysUntil} days ago`;
   return `in ${daysUntil} days`;
 }
 
@@ -192,6 +200,15 @@ export default function Noticeboard({
   // on close would cut the closing animation short.
   const [dialogUsed, setDialogUsed] = useState(false);
 
+  // The card is "this month": its count and "+N more" are this month's only.
+  // A quiet month arrives topped up with the next ones coming, so the card
+  // still shows two rows; the subtitle then says so.
+  const shownAnniversaries = anniversaries.slice(0, ANNIVERSARY_ROWS);
+  const anniversariesThisMonth = anniversaries.filter((person) => person.this_month).length;
+  const hiddenThisMonth =
+    anniversariesThisMonth - shownAnniversaries.filter((person) => person.this_month).length;
+  const toppedUp = shownAnniversaries.some((person) => !person.this_month);
+
   const openPerson = (id: number) => {
     setDialogUsed(true);
     setSelected(id);
@@ -325,12 +342,16 @@ export default function Noticeboard({
       <SectionCard
         title="Work anniversaries"
         icon={<CelebrationIcon color="secondary" />}
-        subtitle="Years at Trigyan, over the next 30 days."
-        count={anniversaries.length}
+        subtitle={
+          toppedUp
+            ? 'Years at Trigyan, this month and next up.'
+            : 'Years at Trigyan, this month.'
+        }
+        count={anniversariesThisMonth}
         footer={<ViewMore to="/anniversaries" />}
       >
-        <NoticeList empty="No work anniversaries in the next 30 days.">
-          {anniversaries.map((person) => (
+        <NoticeList empty="No work anniversaries this month.">
+          {shownAnniversaries.map((person) => (
             <PersonRow key={person.id} onOpen={() => openPerson(person.id)}>
               <Stack direction="row" spacing={1.5} alignItems="center">
                 <Avatar
@@ -373,6 +394,15 @@ export default function Noticeboard({
             </PersonRow>
           ))}
         </NoticeList>
+        {hiddenThisMonth > 0 && (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: 'block', mt: 1.5 }}
+          >
+            +{hiddenThisMonth} more this month
+          </Typography>
+        )}
       </SectionCard>
 
       {dialogUsed && (

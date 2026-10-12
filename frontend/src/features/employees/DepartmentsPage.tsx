@@ -111,15 +111,17 @@ function DepartmentsTab({ mayManage }: { mayManage: boolean }) {
         <EmptyState title="No departments yet" />
       ) : (
         <TableContainer sx={{ overflowX: 'auto' }}>
-          <Table size="small">
+          {/* Fixed, evenly spread columns, all reading from the left; Name
+              takes the spare width, Actions only what its button needs. */}
+          <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 800 }}>
             <TableHead>
               <TableRow>
-                <TableCell>Code</TableCell>
+                <TableCell sx={{ width: '12%' }}>Code</TableCell>
                 <TableCell>Name</TableCell>
-                <TableCell>Head</TableCell>
-                <TableCell align="right">Employees</TableCell>
-                <TableCell>Status</TableCell>
-                {mayManage && <TableCell align="right">Actions</TableCell>}
+                <TableCell sx={{ width: '22%' }}>Head</TableCell>
+                <TableCell sx={{ width: '14%' }}>Employees</TableCell>
+                <TableCell sx={{ width: '14%' }}>Status</TableCell>
+                {mayManage && <TableCell sx={{ width: 140 }}>Actions</TableCell>}
               </TableRow>
             </TableHead>
             <TableBody>
@@ -128,7 +130,7 @@ function DepartmentsTab({ mayManage }: { mayManage: boolean }) {
                   <TableCell>{row.code}</TableCell>
                   <TableCell>{row.name}</TableCell>
                   <TableCell>{row.head_name ?? '-'}</TableCell>
-                  <TableCell align="right">
+                  <TableCell>
                     {/* The count is the question "who are they?" waiting to be
                         asked, so it answers it. */}
                     {row.employee_count > 0 ? (
@@ -152,7 +154,7 @@ function DepartmentsTab({ mayManage }: { mayManage: boolean }) {
                     />
                   </TableCell>
                   {mayManage && (
-                    <TableCell align="right">
+                    <TableCell>
                       <Button
                         size="small"
                         disabled={update.busy}
@@ -250,13 +252,16 @@ function DesignationsTab({ mayManage }: { mayManage: boolean }) {
         <EmptyState title="No designations yet" />
       ) : (
         <TableContainer sx={{ overflowX: 'auto' }}>
-          <Table size="small">
+          {/* Fixed columns reading from the left: Code, Name and Level spread
+              evenly, Employees only as wide as its heading - no empty strip
+              after it. */}
+          <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 640 }}>
             <TableHead>
               <TableRow>
-                <TableCell>Code</TableCell>
+                <TableCell sx={{ width: '28%' }}>Code</TableCell>
                 <TableCell>Name</TableCell>
-                <TableCell align="right">Level</TableCell>
-                <TableCell align="right">Employees</TableCell>
+                <TableCell sx={{ width: '28%' }}>Level</TableCell>
+                <TableCell sx={{ width: 130 }}>Employees</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -264,8 +269,8 @@ function DesignationsTab({ mayManage }: { mayManage: boolean }) {
                 <TableRow key={row.id} hover>
                   <TableCell>{row.code}</TableCell>
                   <TableCell>{row.name}</TableCell>
-                  <TableCell align="right">{row.level}</TableCell>
-                  <TableCell align="right">{row.employee_count}</TableCell>
+                  <TableCell>{row.level}</TableCell>
+                  <TableCell>{row.employee_count}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

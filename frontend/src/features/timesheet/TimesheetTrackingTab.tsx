@@ -86,6 +86,9 @@ const SUBHEAD = { fontWeight: 600, color: 'text.secondary', fontSize: 13 } as co
  */
 const NOTIFY_BUTTON_SX = { width: 120, justifyContent: 'flex-start', px: 1.5 } as const;
 
+/** The Reminder column: one Notify button plus the cell's padding either side. */
+const REMINDER_WIDTH = 120 + 2 * 16;
+
 /** Notify, or "Not needed" once the timesheet is in. Same in every table. */
 function ReminderCell({
   row,
@@ -138,18 +141,17 @@ function EmployeeRows({
   dense?: boolean;
 }) {
   return (
-    // Fixed columns, Hours centred in its own: right-aligned hours sat flush
-    // against a left-aligned Reminder and the two read as one column.
-    <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 860 }}>
+    // Fixed columns sharing the width evenly, all reading from the left.
+    // Reminder is just wide enough for its button (no strip of empty space on
+    // the right); Employee, the first column, takes what is left.
+    <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 1000 }}>
       <TableHead>
         <TableRow>
           <TableCell>Employee</TableCell>
-          {!dense && <TableCell sx={{ width: '20%' }}>Department</TableCell>}
+          {!dense && <TableCell sx={{ width: '22%' }}>Department</TableCell>}
           <TableCell sx={{ width: '18%' }}>Status</TableCell>
-          <TableCell align="center" sx={{ width: 140 }}>
-            Hours
-          </TableCell>
-          <TableCell sx={{ width: 150 }}>Reminder</TableCell>
+          <TableCell sx={{ width: '14%' }}>Hours</TableCell>
+          <TableCell sx={{ width: REMINDER_WIDTH }}>Reminder</TableCell>
         </TableRow>
       </TableHead>
       <TableBody>
@@ -173,7 +175,7 @@ function EmployeeRows({
             <TableCell>
               <SubmissionChip row={row} />
             </TableCell>
-            <TableCell align="center">
+            <TableCell>
               <HoursCell row={row} />
             </TableCell>
             <TableCell>
@@ -195,6 +197,7 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
   const [week, setWeek] = useState(lastCompletedWeek);
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<number | null>(null);
+  const toggleProject = (id: number) => setExpanded((open) => (open === id ? null : id));
   const [nudged, setNudged] = useState<Set<number>>(new Set());
 
   const byProject = useApiResource(
@@ -353,34 +356,39 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
                 table rather than a table of their own: then Status sits under
                 Manager, Hours under Submitted and each Notify under Reminder,
                 whatever is open. A nested table sized its own columns and drifted. */}
-            <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 860 }}>
+            {/* Same idea as the employee table: shares of the width, Reminder
+                sized to its button, Project taking what is left. */}
+            <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 1000 }}>
               <TableHead>
                 <TableRow>
                   <TableCell sx={{ width: 56 }} />
                   <TableCell>Project</TableCell>
-                  <TableCell sx={{ width: '20%' }}>Manager</TableCell>
-                  <TableCell align="center" sx={{ width: '9%' }}>
-                    Team
-                  </TableCell>
-                  <TableCell align="center" sx={{ width: '12%' }}>
-                    Submitted
-                  </TableCell>
-                  <TableCell sx={{ width: 150 }}>Reminder</TableCell>
+                  <TableCell sx={{ width: '22%' }}>Manager</TableCell>
+                  <TableCell sx={{ width: '14%' }}>Team</TableCell>
+                  <TableCell sx={{ width: '16%' }}>Submitted</TableCell>
+                  <TableCell sx={{ width: REMINDER_WIDTH }}>Reminder</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {(byProject.data?.results ?? []).map((project) => (
                   <Fragment key={project.project_id}>
-                    <TableRow hover>
+                    {/* The whole row opens the project's team, not just the arrow. */}
+                    <TableRow
+                      hover
+                      onClick={() => toggleProject(project.project_id)}
+                      selected={expanded === project.project_id}
+                      sx={{ cursor: 'pointer' }}
+                    >
                       <TableCell>
                         <IconButton
                           size="small"
-                          onClick={() =>
-                            setExpanded(
-                              expanded === project.project_id ? null : project.project_id,
-                            )
-                          }
+                          onClick={(event) => {
+                            // The row toggles too; once is enough.
+                            event.stopPropagation();
+                            toggleProject(project.project_id);
+                          }}
                           aria-label={`Show the team on ${project.project_code}`}
+                          aria-expanded={expanded === project.project_id}
                         >
                           {expanded === project.project_id ? (
                             <KeyboardArrowUpIcon />
@@ -403,8 +411,8 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
                           {project.project_manager_name ?? '—'}
                         </Typography>
                       </TableCell>
-                      <TableCell align="center">{project.team_size}</TableCell>
-                      <TableCell align="center">
+                      <TableCell>{project.team_size}</TableCell>
+                      <TableCell>
                         <Chip
                           size="small"
                           color={
@@ -418,7 +426,10 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
                           label={`${project.submitted_count}/${project.team_size}`}
                         />
                       </TableCell>
-                      <TableCell>
+                      {/* Sending reminders is not a request to open the team. On the
+                          cell, not the button, so a click on a greyed-out Notify
+                          (which passes straight through it) does not open it either. */}
+                      <TableCell onClick={(event) => event.stopPropagation()}>
                         <Button
                           size="small"
                           variant="outlined"
@@ -448,9 +459,7 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
                             <TableCell sx={SUBHEAD}>Employee</TableCell>
                             <TableCell sx={SUBHEAD}>Status</TableCell>
                             <TableCell />
-                            <TableCell align="center" sx={SUBHEAD}>
-                              Hours
-                            </TableCell>
+                            <TableCell sx={SUBHEAD}>Hours</TableCell>
                             <TableCell sx={SUBHEAD}>Reminder</TableCell>
                           </TableRow>
                           {project.employees.map((row) => (
@@ -469,7 +478,7 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
                                 <SubmissionChip row={row} />
                               </TableCell>
                               <TableCell />
-                              <TableCell align="center">
+                              <TableCell>
                                 <HoursCell row={row} />
                               </TableCell>
                               <TableCell>

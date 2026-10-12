@@ -40,7 +40,8 @@ def test_manager_can_approve_leave_and_timesheets(manager_user):
 @pytest.mark.django_db
 def test_hr_owns_leave_policy_but_not_role_management(hr_user):
     assert hr_user.has_module_permission("leave.manage_policy")
-    assert hr_user.has_module_permission("employee.create")
+    # Onboarding moved to Admin; HR no longer creates employees.
+    assert not hr_user.has_module_permission("employee.create")
     assert not hr_user.has_module_permission("admin.manage_roles")
     assert hr_user.is_privileged
 

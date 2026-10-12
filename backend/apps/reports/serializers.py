@@ -53,6 +53,9 @@ class UpcomingAnniversarySerializer(serializers.Serializer):
     celebrated_on = serializers.DateField()
     days_until = serializers.IntegerField()
     is_today = serializers.BooleanField()
+    this_month = serializers.BooleanField(
+        help_text="Falls in the current calendar month (false for the dashboard's top-up rows)."
+    )
 
 
 class AnniversaryCalendarSerializer(serializers.Serializer):

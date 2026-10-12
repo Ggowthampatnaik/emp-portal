@@ -44,6 +44,7 @@ const SNEHA = {
   reporting_manager: null,
   reporting_manager_name: null,
   direct_report_count: 0,
+  phone: '+919876543210',
   direct_reports: [],
   date_of_joining: '2018-04-02',
   work_location: 'Hyderabad',
@@ -87,38 +88,38 @@ describe('EmployeeDetailsDialog', () => {
     directoryEntry.mockResolvedValue(SNEHA);
   });
 
-  it('offers Admin no way through to the record page', async () => {
-    renderDialog(adminUser);
-
-    await screen.findByText('Sneha Kulkarni');
-    expect(screen.queryByRole('button', { name: 'Open full record' })).not.toBeInTheDocument();
-    // Closing is the only way out, from the title's X or the footer button.
-    expect(screen.getAllByRole('button', { name: 'Close' }).length).toBeGreaterThan(0);
-  });
-
-  it('keeps the link for HR', async () => {
+  it('shows the mobile number, formatted, as plain text', async () => {
     renderDialog(hrUser);
 
-    expect(await screen.findByRole('button', { name: 'Open full record' })).toBeInTheDocument();
+    const number = await screen.findByText('+91 98765 43210');
+    expect(number.closest('a')).toBeNull(); // not clickable
+    expect(screen.getByText('Mobile')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy mobile number' })).toBeInTheDocument();
   });
 
-  it('keeps the link for a manager', async () => {
-    renderDialog(managerUser);
+  it('says "Not recorded" when there is no mobile number', async () => {
+    directoryEntry.mockResolvedValue({ ...SNEHA, phone: '' });
+    renderDialog(hrUser);
 
-    expect(await screen.findByRole('button', { name: 'Open full record' })).toBeInTheDocument();
+    expect(await screen.findByText('Not recorded')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Copy mobile number' }),
+    ).not.toBeInTheDocument();
   });
 
-  it('offers a Super Admin no way through either', async () => {
-    renderDialog(superAdminUser);
+  // The card is a summary only: nobody, whatever their role, is offered a way
+  // through to the full record page from it. Closing is the only way out.
+  it.each([
+    ['an Admin', () => adminUser],
+    ['HR', () => hrUser],
+    ['a manager', () => managerUser],
+    ['a Super Admin', () => superAdminUser],
+    ['a plain employee', () => makeUser()],
+  ])('offers %s no way through to the full record', async (_who, user) => {
+    renderDialog(user());
 
     await screen.findByText('Sneha Kulkarni');
-    expect(screen.queryByRole('button', { name: 'Open full record' })).not.toBeInTheDocument();
-  });
-
-  it('shows a plain employee neither the link nor anyone else’s record', async () => {
-    renderDialog(makeUser());
-
-    await screen.findByText('Sneha Kulkarni');
-    expect(screen.queryByRole('button', { name: 'Open full record' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /open full record/i })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Close' }).length).toBeGreaterThan(0);
   });
 });

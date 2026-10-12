@@ -1,5 +1,6 @@
 import Chip from '@mui/material/Chip';
 import type { ChipProps } from '@mui/material/Chip';
+import Typography from '@mui/material/Typography';
 
 import type { ApprovalStatus } from '@/types/api';
 import type { EmploymentStatus, ProjectStatus } from '@/types/domain';
@@ -45,12 +46,18 @@ const LABEL: Record<string, string> = {
 interface Props {
   status: AnyStatus;
   size?: ChipProps['size'];
+  /**
+   * A fixed width in px, so a column of statuses lines up as one set of
+   * same-sized pills instead of each one sized to its word.
+   */
+  width?: number;
 }
 
 /** One consistent status pill everywhere a workflow or lifecycle state appears. */
-export default function StatusChip({ status, size = 'small' }: Props) {
+export default function StatusChip({ status, size = 'small', width }: Props) {
   return (
     <Chip
+      sx={width ? { width } : undefined}
       size={size}
       label={LABEL[status] ?? status}
       color={COLOR[status] ?? 'default'}
@@ -60,5 +67,17 @@ export default function StatusChip({ status, size = 'small' }: Props) {
           : 'filled'
       }
     />
+  );
+}
+
+/**
+ * The status as plain words, no pill and no colour: the same labels as
+ * StatusChip, for tables that want a quiet column rather than a row of badges.
+ */
+export function StatusText({ status }: { status: AnyStatus }) {
+  return (
+    <Typography variant="body2" fontWeight={600} color="text.secondary" component="span">
+      {LABEL[status] ?? status}
+    </Typography>
   );
 }

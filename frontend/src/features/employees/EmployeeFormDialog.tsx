@@ -17,6 +17,7 @@ import { useApiAction, useApiResource } from '@/hooks/useApiResource';
 import { employeesApi } from '@/services/api/services';
 import { ROLES, type RoleSlug } from '@/types/auth';
 import { todayIso } from '@/utils/date';
+import { describeMissing, meetsPasswordRules, PASSWORD_HINT } from '@/utils/passwordRules';
 import ClosableDialogTitle from '@/components/common/ClosableDialogTitle';
 
 interface Props {
@@ -65,11 +66,28 @@ export default function EmployeeFormDialog({ open, onClose, onSaved }: Props) {
   );
 
   const action = useApiAction(employeesApi.create);
+  // Set once Create is pressed, so an untouched empty password is flagged then
+  // rather than the moment the form opens.
+  const [tried, setTried] = useState(false);
+
+  // The same rule as Set your password: what is still missing, as it is typed.
+  const password = form.temporary_password;
+  const passwordProblem =
+    password || tried
+      ? password
+        ? describeMissing(password)
+        : 'Enter a temporary password.'
+      : null;
 
   const set = (field: keyof typeof EMPTY) => (event: { target: { value: string } }) =>
     setForm((prev) => ({ ...prev, [field]: event.target.value }));
 
   const handleSubmit = async () => {
+    setTried(true);
+    // A weak password is refused by the server too; stopping here just saves
+    // the round trip and keeps the message beside the field.
+    if (!meetsPasswordRules(password)) return;
+
     const payload: Record<string, unknown> = {
       ...form,
       employee_code: form.employee_code.trim().toUpperCase(),
@@ -88,6 +106,7 @@ export default function EmployeeFormDialog({ open, onClose, onSaved }: Props) {
       dispatch(showToast(`${created.full_name} onboarded.`, 'success'));
       setForm({ ...EMPTY });
       setRole(ROLES.EMPLOYEE);
+      setTried(false);
       onSaved();
     }
   };
@@ -157,9 +176,11 @@ export default function EmployeeFormDialog({ open, onClose, onSaved }: Props) {
               required
               fullWidth
               {...fieldProps('temporary_password')}
+              error={Boolean(action.fieldErrors.temporary_password || passwordProblem)}
               helperText={
                 action.fieldErrors.temporary_password ??
-                'The employee must change this at first sign-in.'
+                passwordProblem ??
+                `${PASSWORD_HINT} The employee must change it at first sign-in.`
               }
             />
             <TextField

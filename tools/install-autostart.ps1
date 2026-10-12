@@ -55,7 +55,12 @@ $arguments = @(
     '-File', "`"$launcher`""
     '-Background'
 )
-if ($Dev) { $arguments += '-Dev' }
+# Serve the bundle that is already built rather than rebuilding it first. A
+# rebuild is a minute or more, longer straight after a reboot, and the launcher
+# stops waiting for the port before it finishes - so a restart that rebuilt
+# left the portal down and the task reporting failure. Whoever changes the code
+# rebuilds dist\; the watchdog's job is only to keep it served.
+if ($Dev) { $arguments += '-Dev' } else { $arguments += '-SkipBuild' }
 
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' `
     -Argument ($arguments -join ' ') -WorkingDirectory $root

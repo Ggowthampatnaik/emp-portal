@@ -94,7 +94,8 @@ MANAGER_PERMISSIONS = [
 HR_PERMISSIONS = [
     *EMPLOYEE_PERMISSIONS,
     "employee.view_all",
-    "employee.create",
+    # No employee.create: onboarding moved to Admin (Administration -> Users)
+    # at the company's request. HR still edits, deactivates and manages people.
     "employee.edit",
     "employee.deactivate",
     "employee.request_deletion",
@@ -126,6 +127,9 @@ HR_PERMISSIONS = [
 ADMIN_PERMISSIONS = [
     *EMPLOYEE_PERMISSIONS,
     "employee.view_all",
+    # Admin onboards from Administration -> Users with the same form HR uses.
+    # Super Admin stays out of reach: onboarding refuses that role for anyone.
+    "employee.create",
     "employee.edit",
     "employee.approve_deletion",
     "department.manage",

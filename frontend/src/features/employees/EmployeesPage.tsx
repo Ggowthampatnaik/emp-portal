@@ -6,7 +6,6 @@
  * side search, filters, onboarding - scoped to what they are allowed to see.
  */
 
-import AddIcon from '@mui/icons-material/Add';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import ApartmentIcon from '@mui/icons-material/Apartment';
 import Avatar from '@mui/material/Avatar';
@@ -46,7 +45,6 @@ import RoleSelect from '@/features/employees/RoleSelect';
 import Chip from '@mui/material/Chip';
 import DirectoryView from '@/features/employees/DirectoryView';
 import EmployeeDetailsDialog from '@/features/employees/EmployeeDetailsDialog';
-import EmployeeFormDialog from '@/features/employees/EmployeeFormDialog';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useApiResource } from '@/hooks/useApiResource';
 import { employeesApi } from '@/services/api/services';
@@ -110,7 +108,6 @@ export default function EmployeesPage() {
   }, [term]);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(25);
-  const [creating, setCreating] = useState(false);
   const [roleFor, setRoleFor] = useState<EmployeeListItem | null>(null);
   // Cards lead for looking; the table stays one click away for working
   // (roles, columns). Super Admin has the table only: their Employees list is
@@ -196,15 +193,7 @@ export default function EmployeesPage() {
                 </Button>
               </>
             )}
-            {can('employee.create') && !isSuperAdmin && (
-              <Button
-                startIcon={<AddIcon />}
-                variant="contained"
-                onClick={() => setCreating(true)}
-              >
-                Add employee
-              </Button>
-            )}
+            {/* No Add employee here: onboarding lives in Administration -> Users. */}
           </Stack>
         }
       />
@@ -439,15 +428,6 @@ export default function EmployeesPage() {
           }}
         />
       )}
-
-      <EmployeeFormDialog
-        open={creating}
-        onClose={() => setCreating(false)}
-        onSaved={() => {
-          setCreating(false);
-          void reload();
-        }}
-      />
 
       {/* The summary card Admin gets instead of a page load. `onNavigate` lets
           the reporting-manager line inside it walk to the next person without

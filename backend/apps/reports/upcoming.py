@@ -8,6 +8,7 @@ personal data with no bearing on wishing someone a happy birthday, and the
 dashboard is visible to the whole company.
 """
 
+import calendar
 from datetime import date, timedelta
 from functools import reduce
 from operator import or_
@@ -29,7 +30,8 @@ DEFAULT_LIMIT = 8
 # eight-row one is the misalignment people actually notice.
 DASHBOARD_HOLIDAY_LIMIT = 4
 DASHBOARD_BIRTHDAY_LIMIT = 4
-DASHBOARD_ANNIVERSARY_LIMIT = 4
+#: Rows on the dashboard's anniversary card; a quiet month is topped up to it.
+DASHBOARD_ANNIVERSARY_ROWS = 2
 #: How far the two dashboard cards look ahead. Both use it, so they always
 #: cover the same stretch of calendar.
 NOTICEBOARD_HORIZON_DAYS = 30
@@ -39,14 +41,15 @@ def _is_leap(year: int) -> bool:
     return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
 
 
-def _window(today: date, horizon_days: int) -> dict[tuple[int, int], int]:
+def _window(today: date, horizon_days: int, days_back: int = 0) -> dict[tuple[int, int], int]:
     """Maps each (month, day) in the window to how many days away it is.
 
     Built by walking real dates, so the year boundary needs no special case:
-    31 December simply rolls into 1 January.
+    31 December simply rolls into 1 January. ``days_back`` starts the window
+    that many days before today; those days map to negative offsets.
     """
     days: dict[tuple[int, int], int] = {}
-    for offset in range(horizon_days + 1):
+    for offset in range(-days_back, horizon_days + 1):
         moment = today + timedelta(days=offset)
         days.setdefault((moment.month, moment.day), offset)
 
@@ -126,6 +129,7 @@ def upcoming_anniversaries(
     request=None,
     horizon_days: int = DEFAULT_HORIZON_DAYS,
     limit: int = DEFAULT_LIMIT,
+    include_month_so_far: bool = False,
 ) -> list[dict]:
     """Active employees whose work anniversary is coming up.
 
@@ -133,9 +137,15 @@ def upcoming_anniversaries(
     how many years they complete on it. Someone who joined less than a year
     ago has no anniversary yet and is left out - "0 years" is not a milestone.
     The same rolling window as birthdays, so the cards agree on every day.
+
+    With ``include_month_so_far`` the window also reaches back to the 1st of
+    the current month, so an anniversary earlier this month stays on the
+    dashboard all month instead of vanishing the day after (``days_until`` is
+    negative for those). Rows stay in calendar order.
     """
     today = timezone.localdate()
-    window = _window(today, horizon_days)
+    days_back = today.day - 1 if include_month_so_far else 0
+    window = _window(today, horizon_days, days_back)
     if not window:
         return []
 
@@ -177,11 +187,42 @@ def upcoming_anniversaries(
                 "celebrated_on": celebrated_on,
                 "days_until": days_until,
                 "is_today": days_until == 0,
+                "this_month": (celebrated_on.year, celebrated_on.month)
+                == (today.year, today.month),
             }
         )
 
     rows.sort(key=lambda row: (row["days_until"], row["full_name"]))
     return rows[:limit]
+
+
+def anniversaries_this_month(request=None, at_least: int = 0) -> list[dict]:
+    """Every work anniversary in the current calendar month, 1st to last day.
+
+    The dashboard card shows the first couple and counts the rest, so it needs
+    the whole month rather than a capped list. A quiet month - fewer than
+    ``at_least`` - is topped up with the next anniversaries after it, so the
+    card never sits half empty; those rows carry a later ``celebrated_on``,
+    which is how the card tells them apart from this month's.
+    """
+    today = timezone.localdate()
+    days_in_month = calendar.monthrange(today.year, today.month)[1]
+    everyone = Employee.objects.count() + 1
+    rows = upcoming_anniversaries(
+        request,
+        horizon_days=days_in_month - today.day,
+        limit=everyone,
+        include_month_so_far=True,
+    )
+    if len(rows) < at_least:
+        month_end = today.replace(day=days_in_month)
+        later = [
+            row
+            for row in upcoming_anniversaries(request, horizon_days=365, limit=everyone)
+            if row["celebrated_on"] > month_end
+        ]
+        rows += later[: at_least - len(rows)]
+    return rows
 
 
 def _holiday_row(holiday: Holiday, today: date) -> dict:

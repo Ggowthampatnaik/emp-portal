@@ -18,7 +18,6 @@ from apps.administration.serializers import (
     UserAdminSerializer,
     UserBulkDeleteResultSerializer,
     UserBulkDeleteSerializer,
-    UserCreateSerializer,
     UserPasswordResetSerializer,
 )
 from apps.authentication.models import ModulePermission, Role
@@ -30,24 +29,22 @@ from apps.employees.serializers import (
 )
 from apps.employees.services import approve_account_deletion, reject_account_deletion
 from common.audit import record_audit
-from common.enums import AuditAction, RoleSlug
+from common.enums import AuditAction, EmploymentStatus, RoleSlug
 from common.permissions import HasModulePermission
 
 
 class UserAdminViewSet(
-    mixins.CreateModelMixin,
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
     mixins.UpdateModelMixin,
     viewsets.GenericViewSet,
 ):
-    """Portal accounts.
+    """Portal accounts: list, read, activate and deactivate, assign roles.
 
-    Two ways in: employee onboarding raises an account alongside an employment
-    record, and an administrator can raise a bare account here for somebody who
-    needs to sign in without being on the payroll. Both produce the same thing -
-    a hashed password and ``must_change_password`` - so the first sign-in
-    behaves identically whichever door it came through.
+    There is no create here. Accounts come into being one way only - employee
+    onboarding ("Add employee", for HR and Admin), which raises the account and
+    its employment record together. The bare-account "Add user" that used to
+    live here was removed at the company's request.
     """
 
     serializer_class = UserAdminSerializer
@@ -104,30 +101,23 @@ class UserAdminViewSet(
             queryset = queryset.filter(employee_profile__skills__skill_id=int(part))
         return queryset.distinct()
 
-    def get_serializer_class(self):
-        return UserCreateSerializer if self.action == "create" else UserAdminSerializer
-
-    def create(self, request: Request, *args, **kwargs) -> Response:
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.save()
-        record_audit(request, AuditAction.CREATE, user, changes={"created_by": "administrator"})
-        # Answered in the read shape, so the list the SPA already renders can
-        # take the new row without a second request.
-        return Response(
-            UserAdminSerializer(user, context=self.get_serializer_context()).data,
-            status=status.HTTP_201_CREATED,
-        )
-
     def perform_update(self, serializer):
         before = {"is_active": serializer.instance.is_active}
         instance = serializer.save()
-        record_audit(
-            self.request,
-            AuditAction.UPDATE,
-            instance,
-            changes={"is_active": [before["is_active"], instance.is_active]},
-        )
+        changes: dict = {"is_active": [before["is_active"], instance.is_active]}
+
+        # Switching the account on or off switches the person with it, so
+        # "Reactivate" after a Delete really brings them back: able to sign in
+        # *and* active again in every list, not one without the other.
+        employee = getattr(instance, "employee_profile", None)
+        if employee is not None and instance.is_active != before["is_active"]:
+            employee.employment_status = (
+                EmploymentStatus.ACTIVE if instance.is_active else EmploymentStatus.INACTIVE
+            )
+            employee.save(update_fields=["employment_status", "updated_at"])
+            changes["employment_status"] = employee.employment_status
+
+        record_audit(self.request, AuditAction.UPDATE, instance, changes=changes)
 
     @extend_schema(request=RoleAssignmentSerializer, responses={200: UserAdminSerializer})
     @action(detail=True, methods=["post"], url_path="roles")
@@ -200,18 +190,23 @@ class UserAdminViewSet(
     )
     @action(detail=False, methods=["post"], url_path="delete")
     def bulk_delete(self, request: Request) -> Response:
-        """Deletes accounts - one, several, or all of them.
+        """The Users table's Delete - one, several, or all accounts.
 
         A POST, not DELETE, because it takes a body and acts on many rows.
-        Deleting a user cascades to their employment record and everything
-        hanging off it; this is removal, not deactivation - the switch on
-        each row is deactivation.
 
-        Accounts are skipped rather than failing the whole request: the
-        caller's own (locking every administrator out in one click should take
-        more than one click), anyone holding an employment record (removing a
-        person is the account-closure flow, which takes two people), and
-        unknown ids, so a stale table does not turn into an error.
+        For a person - an account with an employment record, which since
+        "Add user" went is every account - Delete *deactivates*: the record is
+        marked inactive and the account can no longer sign in, the same as
+        deactivating an employee anywhere else. Their leave, timesheets, pay
+        and documents are kept, and the Status switch on the row turns them
+        back on. (It used to skip people entirely and report "0 deleted",
+        which read as broken.) Only a bare account with no employment behind
+        it is actually removed - there is no history to keep.
+
+        Skipped rather than failing the whole request: the caller's own
+        account, a Super Admin's (unless a Super Admin is asking), someone
+        already inactive, and unknown ids, so a stale table does not turn into
+        an error.
 
         ``all=true`` is Super Admin's alone.
         """
@@ -235,22 +230,41 @@ class UserAdminViewSet(
 
         skipped = [f"{pk}: no such account" for pk in sorted(missing)]
         deleted = 0
+        deactivated = 0
         for user in list(queryset):
             if user.pk == request.user.pk:
                 skipped.append(f"{user.pk}: your own account")
                 continue
-            # Removing a *person* is the account-closure flow: HR raises it,
-            # Admin approves it, two people. This endpoint clears accounts
-            # that never became employees, and must not be the way around a
-            # control the same role is meant to be the second half of.
-            if getattr(user, "employee_profile", None) is not None:
-                skipped.append(f"{user.pk}: has an employment record - use Account closures")
+            # An Admin cannot switch off the account above them.
+            if user.is_super_admin and not request.user.is_super_admin:
+                skipped.append(f"{user.pk}: a Super Admin account")
                 continue
-            record_audit(request, AuditAction.DELETE, user, changes={"email": user.email})
-            user.delete()
-            deleted += 1
 
-        return Response({"deleted": deleted, "skipped": skipped})
+            employee = getattr(user, "employee_profile", None)
+            if employee is None:
+                # A bare account: nothing hangs off it, so it really goes.
+                record_audit(request, AuditAction.DELETE, user, changes={"email": user.email})
+                user.delete()
+                deleted += 1
+                continue
+
+            if not user.is_active and employee.employment_status == EmploymentStatus.INACTIVE:
+                skipped.append(f"{user.pk}: already inactive")
+                continue
+            # A person: deactivate, keep the history - as everywhere else.
+            employee.employment_status = EmploymentStatus.INACTIVE
+            employee.save(update_fields=["employment_status", "updated_at"])
+            user.is_active = False
+            user.save(update_fields=["is_active", "updated_at"])
+            record_audit(
+                request,
+                AuditAction.UPDATE,
+                user,
+                changes={"is_active": [True, False], "employment_status": "inactive"},
+            )
+            deactivated += 1
+
+        return Response({"deleted": deleted, "deactivated": deactivated, "skipped": skipped})
 
 
 class RoleViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):

@@ -76,6 +76,7 @@ function directoryDetail(): DirectoryDetail {
     date_of_joining: '2022-03-01',
     work_location: 'Hyderabad',
     photo_url: null,
+    phone: '',
     direct_reports: [],
   };
 }
@@ -193,15 +194,15 @@ describe('Noticeboard', () => {
     expect(screen.queryByRole('button', { name: /open full record/i })).not.toBeInTheDocument();
   });
 
-  it('offers the full record inside the card only to a viewer who may open it', async () => {
+  it('opens the card as a summary only, with no way through to the full record', async () => {
     vi.spyOn(employeesApi, 'directoryEntry').mockResolvedValue(directoryDetail());
 
+    // Even for someone allowed to read every record.
     renderBoard([birthday()], [holiday()], ['employee.view_all'] as PermissionCode[]);
     await userEvent.click(screen.getByRole('button', { name: /Asha Rao/ }));
 
-    expect(
-      await screen.findByRole('button', { name: /open full record/i }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /open full record/i })).not.toBeInTheDocument();
   });
 
   it('lists work anniversaries with the years each person completes', () => {
@@ -226,9 +227,7 @@ describe('Noticeboard', () => {
     ]);
 
     const card = screen.getByText('Work anniversaries').closest('.MuiCard-root') as HTMLElement;
-    expect(
-      within(card).getByText('Years at Trigyan, over the next 30 days.'),
-    ).toBeInTheDocument();
+    expect(within(card).getByText('Years at Trigyan, this month.')).toBeInTheDocument();
     expect(within(card).getByText(/5 years · joined 17 Oct 2021/)).toBeInTheDocument();
     expect(within(card).getByText(/1 year · joined 7 Oct 2025/)).toBeInTheDocument();
     expect(within(card).getByText('🎉 Today')).toBeInTheDocument();
@@ -238,7 +237,63 @@ describe('Noticeboard', () => {
   it('says so when nobody has an anniversary coming up', () => {
     renderBoard([birthday()], [holiday()]);
 
-    expect(screen.getByText('No work anniversaries in the next 30 days.')).toBeInTheDocument();
+    expect(screen.getByText('No work anniversaries this month.')).toBeInTheDocument();
+  });
+
+  it('shows two of the month and counts the rest, with the full list behind View more', () => {
+    renderBoard([], [], undefined, [
+      anniversary({ id: 21, full_name: 'Rohan Desai', day: 5, days_until: -4 }),
+      anniversary({ id: 22, full_name: 'Meera Joshi', day: 12, days_until: 3 }),
+      anniversary({ id: 23, full_name: 'Divya Sharma', day: 23, days_until: 14 }),
+      anniversary({ id: 24, full_name: 'Arjun Pillai', day: 28, days_until: 19 }),
+    ]);
+
+    const card = screen.getByText('Work anniversaries').closest('.MuiCard-root') as HTMLElement;
+    expect(within(card).getByText('Rohan Desai')).toBeInTheDocument();
+    expect(within(card).getByText('Meera Joshi')).toBeInTheDocument();
+    expect(within(card).queryByText('Divya Sharma')).not.toBeInTheDocument();
+    expect(within(card).getByText('+2 more this month')).toBeInTheDocument();
+    expect(within(card).getByText('4')).toBeInTheDocument(); // the count is the month's total
+    expect(within(card).getByRole('link', { name: /view more/i })).toHaveAttribute(
+      'href',
+      '/anniversaries',
+    );
+  });
+
+  it('tops a quiet month up with the next one, counting only this month', () => {
+    renderBoard([], [], undefined, [
+      anniversary({ id: 31, full_name: 'Rohan Desai', day: 5, days_until: -4 }),
+      anniversary({
+        id: 32,
+        full_name: 'Divya Sharma',
+        day: 23,
+        month: 11,
+        days_until: 45,
+        this_month: false,
+      }),
+    ]);
+
+    const card = screen.getByText('Work anniversaries').closest('.MuiCard-root') as HTMLElement;
+    expect(within(card).getByText('Rohan Desai')).toBeInTheDocument();
+    expect(within(card).getByText('Divya Sharma')).toBeInTheDocument();
+    expect(within(card).getByText('in 45 days')).toBeInTheDocument();
+    expect(
+      within(card).getByText('Years at Trigyan, this month and next up.'),
+    ).toBeInTheDocument();
+    expect(within(card).getByText('1')).toBeInTheDocument(); // only October's counts
+    expect(within(card).queryByText(/more this month/)).not.toBeInTheDocument();
+  });
+
+  it('keeps anniversaries from earlier this month, saying how long ago', () => {
+    renderBoard([], [], undefined, [
+      anniversary({ id: 12, full_name: 'Rohan Desai', years: 6, day: 5, days_until: -4 }),
+      anniversary({ id: 13, full_name: 'Meera Joshi', years: 2, day: 8, days_until: -1 }),
+    ]);
+
+    const card = screen.getByText('Work anniversaries').closest('.MuiCard-root') as HTMLElement;
+    expect(within(card).getByText('Rohan Desai')).toBeInTheDocument();
+    expect(within(card).getByText('4 days ago')).toBeInTheDocument();
+    expect(within(card).getByText('Yesterday')).toBeInTheDocument();
   });
 });
 
@@ -260,6 +315,7 @@ function anniversary(overrides: Partial<UpcomingAnniversary> = {}): UpcomingAnni
     celebrated_on: `2026-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
     days_until: 13,
     is_today: false,
+    this_month: true,
     ...overrides,
   };
 }

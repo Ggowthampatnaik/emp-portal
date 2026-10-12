@@ -121,6 +121,7 @@ describe('BirthdaysPage', () => {
       date_of_joining: '2022-03-01',
       work_location: 'Hyderabad',
       photo_url: null,
+      phone: '',
       direct_reports: [],
     } satisfies DirectoryDetail);
 

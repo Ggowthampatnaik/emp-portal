@@ -15,12 +15,16 @@ import WeeklyGrid from '@/features/timesheet/WeeklyGrid';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useApiResource } from '@/hooks/useApiResource';
 import { timesheetsApi } from '@/services/api/services';
+import { ROLES } from '@/types/auth';
 
 export default function TimesheetsPage() {
-  const { can } = usePermissions();
+  const { can, roles, isSuperAdmin } = usePermissions();
   const mayApprove = can('timesheet.approve');
-  // HR and above see every sheet, which is what the tracking board is built on.
-  const mayTrack = can('timesheet.view_all');
+  // The Submissions board is HR's: chasing people who have not filed. Admin can
+  // read every sheet too (it backs their timesheet reports) but chases nobody,
+  // so the tab is not theirs - unless they also hold HR. Super Admin keeps it.
+  const adminOnly = roles.includes(ROLES.ADMIN) && !roles.includes(ROLES.HR) && !isSuperAdmin;
+  const mayTrack = can('timesheet.view_all') && !adminOnly;
 
   /**
    * `/timesheets/approvals` opens the caller's queue rather than this week's

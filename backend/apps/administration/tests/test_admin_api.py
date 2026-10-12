@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
 from apps.administration.models import AuditLog
-from common.enums import AuditAction, RoleSlug
+from common.enums import AuditAction, EmploymentStatus, RoleSlug
 
 
 @pytest.mark.django_db
@@ -49,135 +49,19 @@ def test_an_admin_reset_signs_the_account_out_everywhere(auth_client, org, api_c
 # hashed password the normal sign-in check reads, and the same first-login
 # workflow - rather than a second and weaker way in.
 CREATE_URL = "/api/v1/admin/users/"
+DELETE_URL = "/api/v1/admin/users/delete/"
 NEW = {"email": "New.Person@trigyan.io", "temporary_password": "Welcome@2026"}
 
 
 @pytest.mark.django_db
-def test_an_administrator_creates_an_account(auth_client, org):
+def test_administration_no_longer_creates_bare_accounts(auth_client, org):
+    """ "Add user" was removed: accounts come only from employee onboarding."""
     response = auth_client(org["admin"]).post(CREATE_URL, NEW)
 
-    assert response.status_code == 201, response.data
-    assert response.data["email"] == "new.person@trigyan.io"
-    assert response.data["must_change_password"] is True
+    assert response.status_code == 405
+    from django.contrib.auth import get_user_model
 
-
-@pytest.mark.django_db
-def test_the_password_is_stored_hashed_and_signs_the_person_in(api_client, auth_client, org):
-    """The whole point: what was stored is what the login check reads."""
-    auth_client(org["admin"]).post(CREATE_URL, NEW)
-
-    user = get_user_model().objects.get(email="new.person@trigyan.io")
-    assert user.password != "Welcome@2026", "the raw password must never be stored"
-    assert user.check_password("Welcome@2026")
-
-    signed_in = api_client.post(
-        "/api/v1/auth/login/",
-        {"email": "new.person@trigyan.io", "password": "Welcome@2026"},
-    )
-    assert signed_in.status_code == 200, signed_in.data
-    assert signed_in.data["user"]["must_change_password"] is True
-
-
-@pytest.mark.django_db
-def test_the_first_login_workflow_continues_from_there(api_client, auth_client, org):
-    """Sign in, be made to change it, sign in again with the new one."""
-    auth_client(org["admin"]).post(CREATE_URL, NEW)
-
-    first = api_client.post(
-        "/api/v1/auth/login/",
-        {"email": "new.person@trigyan.io", "password": "Welcome@2026"},
-    )
-    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {first.data['access']}")
-    changed = api_client.post(
-        "/api/v1/auth/password/change/",
-        {"current_password": "Welcome@2026", "new_password": "TheirOwn@2026"},
-    )
-    assert changed.status_code == 204
-
-    api_client.credentials()
-    assert (
-        api_client.post(
-            "/api/v1/auth/login/",
-            {"email": "new.person@trigyan.io", "password": "Welcome@2026"},
-        ).status_code
-        == 400
-    ), "the temporary password must stop working"
-
-    again = api_client.post(
-        "/api/v1/auth/login/",
-        {"email": "new.person@trigyan.io", "password": "TheirOwn@2026"},
-    )
-    assert again.status_code == 200
-    assert again.data["user"]["must_change_password"] is False
-
-
-@pytest.mark.django_db
-def test_a_wrong_password_is_refused_for_a_new_account(api_client, auth_client, org):
-    auth_client(org["admin"]).post(CREATE_URL, NEW)
-
-    response = api_client.post(
-        "/api/v1/auth/login/", {"email": "new.person@trigyan.io", "password": "guessing"}
-    )
-    assert response.status_code == 400
-
-
-@pytest.mark.django_db
-def test_the_email_must_be_free(auth_client, org):
-    client = auth_client(org["admin"])
-    client.post(CREATE_URL, NEW)
-
-    again = client.post(CREATE_URL, NEW)
-    assert again.status_code == 400
-    assert "email" in again.data["error"]["details"]
-
-
-@pytest.mark.django_db
-def test_the_email_clash_ignores_case(auth_client, org):
-    response = auth_client(org["admin"]).post(
-        CREATE_URL, {**NEW, "email": org["employee"].user.email.upper()}
-    )
-    assert response.status_code == 400
-
-
-@pytest.mark.django_db
-def test_a_weak_temporary_password_is_refused(auth_client, org):
-    """It is a real credential for as long as it lasts."""
-    response = auth_client(org["admin"]).post(CREATE_URL, {**NEW, "temporary_password": "12345678"})
-
-    assert response.status_code == 400
-    assert "temporary_password" in response.data["error"]["details"]
-
-
-@pytest.mark.django_db
-def test_the_new_account_starts_as_an_employee_only(auth_client, org):
-    """Employee and nothing else: enough to see an employee's portal, and any
-    further role is granted with the one control that already exists."""
-    auth_client(org["admin"]).post(CREATE_URL, NEW)
-
-    user = get_user_model().objects.get(email="new.person@trigyan.io")
-    assert sorted(user.role_slugs) == ["employee"]
-
-
-@pytest.mark.django_db
-def test_creating_an_account_needs_admin_manage_users(auth_client, org):
-    for who in ("hr", "manager", "employee"):
-        response = auth_client(org[who]).post(CREATE_URL, NEW)
-        assert response.status_code == 403, f"{who} should not be able to create accounts"
-
-
-@pytest.mark.django_db
-def test_the_creation_is_audited(auth_client, org):
-    auth_client(org["admin"]).post(CREATE_URL, NEW)
-
-    assert AuditLog.objects.filter(
-        action=AuditAction.CREATE, entity_label__icontains="new.person@trigyan.io"
-    ).exists()
-
-
-# ---------------------------------------------------------------------------
-# Deleting accounts - one, several, or all
-# ---------------------------------------------------------------------------
-DELETE_URL = "/api/v1/admin/users/delete/"
+    assert not get_user_model().objects.filter(email__iexact=NEW["email"]).exists()
 
 
 @pytest.mark.django_db
@@ -223,9 +107,12 @@ def test_delete_all_is_not_an_administrator_action(auth_client, org):
 
 
 @pytest.mark.django_db
-def test_delete_all_spares_everyone_who_works_here(auth_client, org, super_admin_user):
-    """Even for a Super Admin: removing a *person* is the closure flow, which
-    takes two people. This endpoint clears accounts that never became one."""
+def test_delete_all_deactivates_people_and_removes_only_bare_accounts(
+    auth_client, org, super_admin_user
+):
+    """Even for a Super Admin, people are switched off, not erased."""
+    from apps.employees.models import Employee
+
     User = get_user_model()
     stray = User.objects.create_user(email="never-started@trigyan.io", password="Portal@123")
     employed = User.objects.exclude(employee_profile=None).count()
@@ -235,20 +122,80 @@ def test_delete_all_spares_everyone_who_works_here(auth_client, org, super_admin
     assert response.status_code == 200
     assert response.data["deleted"] == 1, "the stray account, and nothing else"
     assert not User.objects.filter(pk=stray.pk).exists()
+    # Everyone who works here is still on record...
     assert User.objects.exclude(employee_profile=None).count() == employed
-    assert any("Account closures" in line for line in response.data["skipped"])
+    # ...but switched off - apart from the caller, who is skipped.
+    assert response.data["deactivated"] >= 1
+    assert (
+        not Employee.objects.filter(employment_status=EmploymentStatus.ACTIVE)
+        .exclude(user=super_admin_user)
+        .exists()
+    )
 
 
 @pytest.mark.django_db
-def test_an_employee_is_never_deleted_by_id_either(auth_client, org):
-    User = get_user_model()
-    victim = org["employee"].user
+def test_deleting_a_person_deactivates_them_and_keeps_their_history(auth_client, org):
+    """Delete on a person: inactive, cannot sign in, every record kept."""
+    victim = org["employee"]
 
-    response = auth_client(org["admin"]).post(DELETE_URL, {"ids": [victim.pk]}, format="json")
+    response = auth_client(org["admin"]).post(DELETE_URL, {"ids": [victim.user.pk]}, format="json")
 
+    assert response.status_code == 200
+    assert response.data["deactivated"] == 1
     assert response.data["deleted"] == 0
-    assert any("Account closures" in line for line in response.data["skipped"])
-    assert User.objects.filter(pk=victim.pk).exists()
+    victim.refresh_from_db()
+    victim.user.refresh_from_db()
+    assert victim.employment_status == EmploymentStatus.INACTIVE
+    assert victim.user.is_active is False
+    # Still there: nothing was erased.
+    assert get_user_model().objects.filter(pk=victim.user.pk).exists()
+
+
+@pytest.mark.django_db
+def test_a_deactivated_person_can_no_longer_sign_in(auth_client, org, api_client):
+    victim = org["employee"].user
+    credentials = {"email": victim.email, "password": "Fixture@123"}
+    # The password is right - so a refusal afterwards is the deactivation.
+    assert api_client.post("/api/v1/auth/login/", credentials, format="json").status_code == 200
+
+    auth_client(org["admin"]).post(DELETE_URL, {"ids": [victim.pk]}, format="json")
+
+    signin = APIClient().post("/api/v1/auth/login/", credentials, format="json")
+    assert signin.status_code in (400, 401, 403)
+
+
+@pytest.mark.django_db
+def test_the_deactivation_is_audited(auth_client, org):
+    victim = org["employee"].user
+    auth_client(org["admin"]).post(DELETE_URL, {"ids": [victim.pk]}, format="json")
+
+    entry = AuditLog.objects.filter(action=AuditAction.UPDATE, entity_id=str(victim.pk)).first()
+    assert entry is not None
+    assert entry.changes["is_active"] == [True, False]
+
+
+@pytest.mark.django_db
+def test_an_admin_cannot_switch_off_a_super_admin(auth_client, org, super_admin_user):
+    response = auth_client(org["admin"]).post(
+        DELETE_URL, {"ids": [super_admin_user.pk]}, format="json"
+    )
+
+    assert response.data["deactivated"] == 0
+    assert any("Super Admin" in line for line in response.data["skipped"])
+    super_admin_user.refresh_from_db()
+    assert super_admin_user.is_active is True
+
+
+@pytest.mark.django_db
+def test_someone_already_inactive_is_skipped(auth_client, org):
+    victim = org["employee"].user
+    client = auth_client(org["admin"])
+    client.post(DELETE_URL, {"ids": [victim.pk]}, format="json")
+
+    again = client.post(DELETE_URL, {"ids": [victim.pk]}, format="json")
+
+    assert again.data["deactivated"] == 0
+    assert any("already inactive" in line for line in again.data["skipped"])
 
 
 @pytest.mark.django_db
@@ -351,42 +298,49 @@ def test_nobody_can_change_their_own_roles(auth_client, org):
 
 
 # ---------------------------------------------------------------------------
-# Onboarding: add user -> temp sign-in -> change password -> complete profile
+# Onboarding: add employee -> temp sign-in -> change password -> complete profile
 # ---------------------------------------------------------------------------
+def onboard(auth_client, org, **extra):
+    """A new joiner, raised the one way accounts are raised now: Add employee."""
+    from apps.employees.models import Department
+
+    department, _ = Department.objects.get_or_create(
+        code="ONB", defaults={"name": "Onboarding test"}
+    )
+    response = auth_client(org["admin"]).post(
+        "/api/v1/employees/",
+        {
+            "employee_code": "TRG0099",
+            "first_name": "New",
+            "last_name": "Person",
+            "email": NEW["email"],
+            "temporary_password": NEW["temporary_password"],
+            "department": department.pk,
+            "date_of_joining": "2026-10-01",
+            **extra,
+        },
+    )
+    assert response.status_code == 201, response.data
+    return response
+
+
 @pytest.mark.django_db
 def test_a_new_account_comes_with_an_open_profile_gate(auth_client, org):
-    """Add-user is the front door of onboarding: it must raise the employment
-    record, or the profile gate never engages and the wizard is skipped."""
+    """Onboarding raises the employment record with the profile unfinished, so
+    the gate engages and the complete-profile wizard is not skipped."""
     from apps.employees.models import Employee
 
-    auth_client(org["admin"]).post(CREATE_URL, NEW)
+    onboard(auth_client, org)
 
     employee = Employee.objects.get(user__email=NEW["email"].lower())
     assert employee.profile_completed is False
-    assert employee.employee_code.startswith("TRG")
-
-
-@pytest.mark.django_db
-def test_new_codes_continue_the_numbering(auth_client, org):
-    from apps.employees.models import Employee
-
-    highest = max(
-        int(code[3:])
-        for code in Employee.objects.values_list("employee_code", flat=True)
-        if code.startswith("TRG") and code[3:].isdigit()
-    )
-
-    auth_client(org["admin"]).post(CREATE_URL, NEW)
-
-    employee = Employee.objects.get(user__email=NEW["email"].lower())
-    assert employee.employee_code == f"TRG{highest + 1:04d}"
 
 
 @pytest.mark.django_db
 def test_the_portal_stays_shut_until_the_profile_is_submitted(auth_client, org, client):
     """The whole point of the workflow: sign in, change the password - and the
     portal is still closed until the profile is actually submitted."""
-    auth_client(org["admin"]).post(CREATE_URL, NEW)
+    onboard(auth_client, org)
 
     signin = client.post(
         "/api/v1/auth/login/",
@@ -455,7 +409,7 @@ def test_the_portal_stays_shut_until_the_profile_is_submitted(auth_client, org, 
 def test_a_draft_with_a_bad_value_is_refused_cleanly(auth_client, org, client):
     """What is typed still has to be valid - a draft holding a phone number
     the final submit would reject helps nobody."""
-    auth_client(org["admin"]).post(CREATE_URL, NEW)
+    onboard(auth_client, org)
     signin = client.post(
         "/api/v1/auth/login/",
         {"email": NEW["email"], "password": NEW["temporary_password"]},
@@ -488,8 +442,8 @@ def test_a_draft_with_a_bad_value_is_refused_cleanly(auth_client, org, client):
 @pytest.mark.django_db
 def test_a_new_joiner_starts_as_an_employee(auth_client, org):
     """An account with no role sees a sidebar of nothing - everyone joins as
-    an employee, and anything more is granted from the table afterwards."""
-    auth_client(org["admin"]).post(CREATE_URL, NEW)
+    an employee, even when nothing more is asked for."""
+    onboard(auth_client, org)
 
     joiner = get_user_model().objects.get(email=NEW["email"].lower())
     assert sorted(joiner.role_slugs) == ["employee"]
@@ -534,3 +488,25 @@ def test_only_a_super_admin_can_grant_super_admin(auth_client, org, make_user):
         format="json",
     )
     assert manager.status_code == 200, manager.data
+
+
+@pytest.mark.django_db
+def test_reactivating_brings_the_person_back(auth_client, org, api_client):
+    """Delete is undone from the same table: active again, and able to sign in."""
+    victim = org["employee"]
+    client = auth_client(org["admin"])
+    client.post(DELETE_URL, {"ids": [victim.user.pk]}, format="json")
+
+    response = client.patch(f"{CREATE_URL}{victim.user.pk}/", {"is_active": True}, format="json")
+
+    assert response.status_code == 200, response.data
+    victim.refresh_from_db()
+    victim.user.refresh_from_db()
+    assert victim.user.is_active is True
+    assert victim.employment_status == EmploymentStatus.ACTIVE
+    signin = api_client.post(
+        "/api/v1/auth/login/",
+        {"email": victim.user.email, "password": "Fixture@123"},
+        format="json",
+    )
+    assert signin.status_code == 200

@@ -63,6 +63,27 @@ const MONTHS = [
   'December',
 ];
 
+/**
+ * Column widths shared by the runs table and the payslip table that opens
+ * under a run. Both span the same width, so the same percentages line up: the
+ * payslip's Employee sits under Period, Paid days under Status, Unpaid under
+ * Employees, and Gross, Deductions and Net under their namesakes. Period (and
+ * the payslip's Employee) takes what is left; Actions is sized to its buttons
+ * (see actionsWidth), so there is no empty strip down the right-hand side.
+ * Everything reads from the left.
+ */
+const COL = {
+  expander: 56,
+  status: '11%',
+  employees: '10%',
+  gross: '12%',
+  deductions: '12%',
+  net: '12%',
+} as const;
+
+/** The empty first column of the payslip table, under the runs' arrows. */
+const INDENT_SX = { bgcolor: 'transparent', borderBottom: 0, width: COL.expander } as const;
+
 const STATUS_COLOR: Record<PayrollRunStatus, 'default' | 'warning' | 'success' | 'primary'> = {
   draft: 'default',
   processed: 'warning',
@@ -76,6 +97,12 @@ export default function PayrollRunsTab() {
   const mayProcess = can('payroll.process');
   const mayApprove = can('payroll.approve');
   const mayExport = can('report.export');
+
+  // Wide enough for the most this viewer can be shown on one run, and no wider:
+  // Reprocess and/or Approve + Send back (or Mark paid), plus the download
+  // icon - measured at 110, 97, 110 and 30px - with room to spare.
+  const actionsWidth =
+    mayProcess && mayApprove ? 420 : mayApprove ? 300 : mayProcess ? 200 : 80;
 
   const [expanded, setExpanded] = useState<number | null>(null);
   const [detail, setDetail] = useState<PayrollRunDetail | null>(null);
@@ -182,28 +209,40 @@ export default function PayrollRunsTab() {
         />
       ) : (
         <TableContainer sx={{ overflowX: 'auto' }}>
-          <Table size="small">
+          <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 1150 }}>
             <TableHead>
               <TableRow>
-                <TableCell width={48} />
+                <TableCell sx={{ width: COL.expander }} />
                 <TableCell>Period</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell align="right">Employees</TableCell>
-                <TableCell align="right">Gross</TableCell>
-                <TableCell align="right">Deductions</TableCell>
-                <TableCell sx={{ pl: 4 }}>Net</TableCell>
-                <TableCell align="right">Actions</TableCell>
+                <TableCell sx={{ width: COL.status }}>Status</TableCell>
+                <TableCell sx={{ width: COL.employees }}>Employees</TableCell>
+                <TableCell sx={{ width: COL.gross }}>Gross</TableCell>
+                <TableCell sx={{ width: COL.deductions }}>Deductions</TableCell>
+                <TableCell sx={{ width: COL.net }}>Net</TableCell>
+                <TableCell sx={{ width: actionsWidth }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {data.results.map((run) => (
                 <Fragment key={run.id}>
-                  <TableRow hover>
+                  {/* The whole row opens the run's payslips, not just the arrow.
+                      A run with nobody in it has nothing to open. */}
+                  <TableRow
+                    hover
+                    onClick={run.employee_count === 0 ? undefined : () => void toggle(run)}
+                    selected={expanded === run.id}
+                    sx={{ cursor: run.employee_count === 0 ? 'default' : 'pointer' }}
+                  >
                     <TableCell>
                       <IconButton
                         size="small"
-                        onClick={() => void toggle(run)}
+                        onClick={(event) => {
+                          // The row toggles too; once is enough.
+                          event.stopPropagation();
+                          void toggle(run);
+                        }}
                         aria-label="Show payslips"
+                        aria-expanded={expanded === run.id}
                         disabled={run.employee_count === 0}
                       >
                         {expanded === run.id ? (
@@ -232,14 +271,16 @@ export default function PayrollRunsTab() {
                         variant={run.status === 'draft' ? 'outlined' : 'filled'}
                       />
                     </TableCell>
-                    <TableCell align="right">{run.employee_count || '-'}</TableCell>
-                    <TableCell align="right">{money(run.total_gross)}</TableCell>
-                    <TableCell align="right">{money(run.total_deductions)}</TableCell>
-                    <TableCell sx={{ pl: 4 }}>
+                    <TableCell>{run.employee_count || '-'}</TableCell>
+                    <TableCell>{money(run.total_gross)}</TableCell>
+                    <TableCell>{money(run.total_deductions)}</TableCell>
+                    <TableCell>
                       <strong>{money(run.total_net)}</strong>
                     </TableCell>
-                    <TableCell align="right">
-                      <Stack direction="row" spacing={1} justifyContent="flex-end">
+                    {/* Process, approve, pay, export: none of them is a request to
+                        open the payslips, so clicks here stay out of the row's. */}
+                    <TableCell onClick={(event) => event.stopPropagation()}>
+                      <Stack direction="row" spacing={1} alignItems="center">
                         {mayProcess && run.is_editable && (
                           <Button
                             size="small"
@@ -271,7 +312,7 @@ export default function PayrollRunsTab() {
                             </Button>
                             <Button
                               size="small"
-                              color="error"
+                              variant="contained"
                               startIcon={<UndoIcon />}
                               disabled={busy}
                               onClick={() => {
@@ -311,32 +352,38 @@ export default function PayrollRunsTab() {
                   </TableRow>
 
                   <TableRow>
-                    <TableCell colSpan={8} sx={{ py: 0, borderBottom: 0 }}>
+                    <TableCell colSpan={8} sx={{ p: 0, borderBottom: 0 }}>
                       <Collapse in={expanded === run.id} unmountOnExit>
-                        <Box sx={{ py: 2, pl: 6 }}>
+                        <Box sx={{ py: 2 }}>
                           {run.notes && (
-                            <Alert severity="warning" sx={{ mb: 2 }}>
+                            <Alert severity="warning" sx={{ mb: 2, ml: '56px', mr: 2 }}>
                               Sent back: {run.notes}
                             </Alert>
                           )}
                           {!detail ? (
-                            <LinearProgress sx={{ maxWidth: 240 }} />
+                            <LinearProgress sx={{ maxWidth: 240, ml: '72px' }} />
                           ) : (
-                            <Table size="small">
+                            <Table size="small" sx={{ tableLayout: 'fixed' }}>
                               <TableHead>
                                 <TableRow>
+                                  <TableCell sx={INDENT_SX} />
                                   <TableCell>Employee</TableCell>
-                                  <TableCell align="right">Paid days</TableCell>
-                                  <TableCell align="right">Unpaid</TableCell>
-                                  <TableCell align="right">Gross</TableCell>
-                                  <TableCell align="right">Deductions</TableCell>
-                                  <TableCell align="right">Net</TableCell>
-                                  {mayPush && <TableCell align="right">Finance</TableCell>}
+                                  <TableCell sx={{ width: COL.status }}>Paid days</TableCell>
+                                  <TableCell sx={{ width: COL.employees }}>Unpaid</TableCell>
+                                  <TableCell sx={{ width: COL.gross }}>Gross</TableCell>
+                                  <TableCell sx={{ width: COL.deductions }}>
+                                    Deductions
+                                  </TableCell>
+                                  <TableCell sx={{ width: COL.net }}>Net</TableCell>
+                                  <TableCell sx={{ width: actionsWidth }}>
+                                    {mayPush ? 'Finance' : null}
+                                  </TableCell>
                                 </TableRow>
                               </TableHead>
                               <TableBody>
                                 {detail.payslips.map((slip) => (
                                   <TableRow key={slip.id}>
+                                    <TableCell sx={INDENT_SX} />
                                     <TableCell>
                                       {slip.employee_name}
                                       <Typography
@@ -350,21 +397,17 @@ export default function PayrollRunsTab() {
                                           : ''}
                                       </Typography>
                                     </TableCell>
-                                    <TableCell align="right">{slip.paid_days}</TableCell>
-                                    <TableCell align="right">
+                                    <TableCell>{slip.paid_days}</TableCell>
+                                    <TableCell>
                                       {Number(slip.lop_days) > 0 ? slip.lop_days : '-'}
                                     </TableCell>
-                                    <TableCell align="right">
-                                      {money(slip.gross_earnings)}
-                                    </TableCell>
-                                    <TableCell align="right">
-                                      {money(slip.total_deductions)}
-                                    </TableCell>
-                                    <TableCell align="right">
+                                    <TableCell>{money(slip.gross_earnings)}</TableCell>
+                                    <TableCell>{money(slip.total_deductions)}</TableCell>
+                                    <TableCell>
                                       <strong>{money(slip.net_pay)}</strong>
                                     </TableCell>
-                                    {mayPush && (
-                                      <TableCell align="right">
+                                    <TableCell>
+                                      {mayPush && (
                                         <Button
                                           size="small"
                                           variant="outlined"
@@ -380,8 +423,8 @@ export default function PayrollRunsTab() {
                                         >
                                           {pushed.has(slip.id) ? 'Sent' : 'Send'}
                                         </Button>
-                                      </TableCell>
-                                    )}
+                                      )}
+                                    </TableCell>
                                   </TableRow>
                                 ))}
                               </TableBody>

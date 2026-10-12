@@ -13,7 +13,7 @@ import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import EmailIcon from '@mui/icons-material/Email';
 import GroupsIcon from '@mui/icons-material/Groups';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import PhoneIphoneIcon from '@mui/icons-material/PhoneIphone';
 import PlaceIcon from '@mui/icons-material/Place';
 import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount';
 import WorkIcon from '@mui/icons-material/Work';
@@ -32,16 +32,14 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import type { SvgIconComponent } from '@mui/icons-material';
 import { useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 import { useAppDispatch } from '@/app/hooks';
 import { ErrorAlert } from '@/components/common/Feedback';
 import { showToast } from '@/features/ui/uiSlice';
-import { usePermissions } from '@/hooks/usePermissions';
 import { useApiResource } from '@/hooks/useApiResource';
 import { employeesApi } from '@/services/api/services';
-import { ROLES } from '@/types/auth';
 import ClosableDialogTitle from '@/components/common/ClosableDialogTitle';
+import { formatPhone } from '@/utils/phone';
 
 interface Props {
   employeeId: number | null;
@@ -102,20 +100,6 @@ function tenure(iso: string): string | null {
 
 export default function EmployeeDetailsDialog({ employeeId, onClose, onNavigate }: Props) {
   const dispatch = useAppDispatch();
-  const navigate = useNavigate();
-  const { canAny, roles, isSuperAdmin } = usePermissions();
-  /**
-   * For the oversight roles this card *is* the record. Their Employees list
-   * opens it instead of the page, and the page holds nothing more: Admin's is
-   * the employment panel plus assets, and Super Admin's stops at employment and
-   * contact. Offering "Open full record" would send either of them somewhere
-   * with less on it than the card they are already reading. Equipment is issued
-   * from Administration → Assets, which is where that job lives anyway. HR and
-   * managers keep the link, because for them there is a fuller record behind it.
-   */
-  const summaryIsTheRecord = isSuperAdmin || roles.includes(ROLES.ADMIN);
-  const mayOpenFullRecord =
-    !summaryIsTheRecord && canAny('employee.view_team', 'employee.view_all');
 
   const { data, loading, error, reload } = useApiResource(
     useCallback(
@@ -125,15 +109,16 @@ export default function EmployeeDetailsDialog({ employeeId, onClose, onNavigate 
     [employeeId],
   );
 
-  const copyEmail = async () => {
-    if (!data) return;
+  const copy = async (text: string, what: string) => {
     try {
-      await navigator.clipboard.writeText(data.email);
-      dispatch(showToast('Email address copied.', 'success'));
+      await navigator.clipboard.writeText(text);
+      dispatch(showToast(`${what} copied.`, 'success'));
     } catch {
       dispatch(showToast('Could not copy to the clipboard.', 'warning'));
     }
   };
+  const copyEmail = () => (data ? copy(data.email, 'Email address') : undefined);
+  const copyPhone = () => (data?.phone ? copy(data.phone, 'Mobile number') : undefined);
 
   return (
     <Dialog open={employeeId !== null} onClose={onClose} maxWidth="sm" fullWidth>
@@ -174,129 +159,166 @@ export default function EmployeeDetailsDialog({ employeeId, onClose, onNavigate 
 
               <Divider />
 
-              <Stack spacing={2}>
-                <DetailRow icon={BadgeIcon} label="Employee ID">
-                  {data.employee_code}
-                </DetailRow>
+              {/* Two columns on anything wider than a phone - who they are and
+                  how to reach them and since when on the left, where they sit on the right -
+                  so the whole card fits without scrolling. One column on a
+                  phone, in the same order. */}
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                  columnGap: 3,
+                  rowGap: 2,
+                  alignItems: 'start',
+                }}
+              >
+                <Stack spacing={2} sx={{ minWidth: 0 }}>
+                  <DetailRow icon={BadgeIcon} label="Employee ID">
+                    {data.employee_code}
+                  </DetailRow>
 
-                <DetailRow icon={EmailIcon} label="Email">
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <Link href={`mailto:${data.email}`} underline="hover">
-                      {data.email}
-                    </Link>
-                    <Tooltip title="Copy email">
-                      <IconButton
-                        size="small"
-                        onClick={copyEmail}
-                        aria-label="Copy email address"
-                      >
-                        <ContentCopyIcon sx={{ fontSize: 14 }} />
-                      </IconButton>
-                    </Tooltip>
-                  </Stack>
-                </DetailRow>
-
-                <DetailRow icon={ApartmentIcon} label="Department">
-                  {data.department_name ?? 'Not assigned'}
-                </DetailRow>
-
-                <DetailRow icon={WorkIcon} label="Designation">
-                  {data.designation_name ?? 'Not assigned'}
-                </DetailRow>
-
-                <DetailRow icon={SupervisorAccountIcon} label="Reporting manager">
-                  {data.reporting_manager && data.reporting_manager_name ? (
-                    <Link
-                      component="button"
-                      type="button"
-                      underline="hover"
-                      onClick={() => onNavigate(data.reporting_manager!)}
-                      sx={{ font: 'inherit' }}
-                    >
-                      {data.reporting_manager_name}
-                    </Link>
-                  ) : (
-                    'None'
-                  )}
-                </DetailRow>
-
-                <DetailRow icon={GroupsIcon} label="Direct reports">
-                  {data.direct_reports.length === 0 ? (
-                    'None'
-                  ) : (
-                    <Stack spacing={0.5} sx={{ mt: 0.5 }}>
-                      {data.direct_reports.map((report) => (
-                        <Stack
-                          key={report.id}
-                          direction="row"
-                          spacing={1}
-                          alignItems="center"
-                          component="button"
-                          type="button"
-                          onClick={() => onNavigate(report.id)}
-                          sx={{
-                            background: 'none',
-                            border: 0,
-                            p: 0.5,
-                            borderRadius: 1,
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                            '&:hover': { bgcolor: 'action.hover' },
-                          }}
+                  <DetailRow icon={EmailIcon} label="Email">
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Link href={`mailto:${data.email}`} underline="hover">
+                        {data.email}
+                      </Link>
+                      <Tooltip title="Copy email">
+                        <IconButton
+                          size="small"
+                          onClick={copyEmail}
+                          aria-label="Copy email address"
                         >
-                          <Avatar
-                            src={report.photo_url ?? undefined}
-                            alt={report.full_name}
+                          <ContentCopyIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                      </Tooltip>
+                    </Stack>
+                  </DetailRow>
+
+                  <DetailRow icon={PhoneIphoneIcon} label="Mobile">
+                    {data.phone ? (
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        {/* Plain text, not a tel: link; the copy button beside it
+                          is the way to take the number elsewhere. */}
+                        <Typography variant="body2">{formatPhone(data.phone)}</Typography>
+                        <Tooltip title="Copy mobile number">
+                          <IconButton
+                            size="small"
+                            onClick={copyPhone}
+                            aria-label="Copy mobile number"
+                          >
+                            <ContentCopyIcon sx={{ fontSize: 14 }} />
+                          </IconButton>
+                        </Tooltip>
+                      </Stack>
+                    ) : (
+                      'Not recorded'
+                    )}
+                  </DetailRow>
+
+                  <DetailRow icon={ApartmentIcon} label="Department">
+                    {data.department_name ?? 'Not assigned'}
+                  </DetailRow>
+
+                  <DetailRow icon={WorkIcon} label="Designation">
+                    {data.designation_name ?? 'Not assigned'}
+                  </DetailRow>
+
+                  <DetailRow icon={CalendarMonthIcon} label="Date of joining">
+                    {formatDate(data.date_of_joining)}
+                    {tenure(data.date_of_joining) && (
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        {tenure(data.date_of_joining)}
+                      </Typography>
+                    )}
+                  </DetailRow>
+                </Stack>
+
+                <Stack spacing={2} sx={{ minWidth: 0 }}>
+                  <DetailRow icon={SupervisorAccountIcon} label="Reporting manager">
+                    {data.reporting_manager && data.reporting_manager_name ? (
+                      <Link
+                        component="button"
+                        type="button"
+                        underline="hover"
+                        onClick={() => onNavigate(data.reporting_manager!)}
+                        sx={{ font: 'inherit' }}
+                      >
+                        {data.reporting_manager_name}
+                      </Link>
+                    ) : (
+                      'None'
+                    )}
+                  </DetailRow>
+
+                  <DetailRow icon={GroupsIcon} label="Direct reports">
+                    {data.direct_reports.length === 0 ? (
+                      'None'
+                    ) : (
+                      <Stack spacing={0.5} sx={{ mt: 0.5 }}>
+                        {data.direct_reports.map((report) => (
+                          <Stack
+                            key={report.id}
+                            direction="row"
+                            spacing={1}
+                            alignItems="center"
+                            component="button"
+                            type="button"
+                            onClick={() => onNavigate(report.id)}
                             sx={{
-                              width: 26,
-                              height: 26,
-                              fontSize: 12,
-                              bgcolor: 'primary.light',
+                              background: 'none',
+                              border: 0,
+                              p: 0.5,
+                              borderRadius: 1,
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                              '&:hover': { bgcolor: 'action.hover' },
                             }}
                           >
-                            {report.full_name[0]?.toUpperCase()}
-                          </Avatar>
-                          <Typography variant="body2">{report.full_name}</Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {report.designation_name ?? report.employee_code}
-                          </Typography>
-                        </Stack>
-                      ))}
-                    </Stack>
-                  )}
-                </DetailRow>
+                            <Avatar
+                              src={report.photo_url ?? undefined}
+                              alt={report.full_name}
+                              sx={{
+                                width: 26,
+                                height: 26,
+                                fontSize: 12,
+                                bgcolor: 'primary.light',
+                              }}
+                            >
+                              {report.full_name[0]?.toUpperCase()}
+                            </Avatar>
+                            {/* Name over title, so a long title never splits the name
+                                across two lines in the narrow right-hand column. */}
+                            <Box sx={{ minWidth: 0 }}>
+                              <Typography variant="body2" noWrap>
+                                {report.full_name}
+                              </Typography>
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                noWrap
+                                display="block"
+                              >
+                                {report.designation_name ?? report.employee_code}
+                              </Typography>
+                            </Box>
+                          </Stack>
+                        ))}
+                      </Stack>
+                    )}
+                  </DetailRow>
 
-                <DetailRow icon={CalendarMonthIcon} label="Date of joining">
-                  {formatDate(data.date_of_joining)}
-                  {tenure(data.date_of_joining) && (
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      {tenure(data.date_of_joining)}
-                    </Typography>
-                  )}
-                </DetailRow>
-
-                <DetailRow icon={PlaceIcon} label="Work location">
-                  {data.work_location || 'Not recorded'}
-                </DetailRow>
-              </Stack>
+                  <DetailRow icon={PlaceIcon} label="Work location">
+                    {data.work_location || 'Not recorded'}
+                  </DetailRow>
+                </Stack>
+              </Box>
             </Stack>
           )}
         </DialogContent>
       </Box>
 
+      {/* A summary only: no link through to the full record page. */}
       <DialogActions sx={{ px: 3, pb: 2 }}>
-        {mayOpenFullRecord && data && (
-          <Button
-            startIcon={<OpenInNewIcon />}
-            onClick={() => {
-              onClose();
-              navigate(`/employees/${data.id}`);
-            }}
-          >
-            Open full record
-          </Button>
-        )}
-        <Box sx={{ flexGrow: 1 }} />
         <Button onClick={onClose} variant="contained">
           Close
         </Button>

@@ -39,14 +39,17 @@ export default function MyTimesheetsTab({ reloadKey }: { reloadKey: number }) {
   return (
     <>
       <TableContainer sx={{ overflowX: 'auto' }}>
-        <Table size="small">
+        {/* Fixed, evenly spread columns, all reading from the left. Comment is
+            last and usually short (long ones are cut off, full text on hover),
+            so it gets a modest share instead of a gap on the right. */}
+        <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 900 }}>
           <TableHead>
             <TableRow>
-              <TableCell>Week</TableCell>
-              <TableCell align="right">Hours</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Submitted</TableCell>
-              <TableCell>Decided</TableCell>
+              <TableCell sx={{ width: '24%' }}>Week</TableCell>
+              <TableCell sx={{ width: '14%' }}>Hours</TableCell>
+              <TableCell sx={{ width: '16%' }}>Status</TableCell>
+              <TableCell sx={{ width: '17%' }}>Submitted</TableCell>
+              <TableCell sx={{ width: '17%' }}>Decided</TableCell>
               <TableCell>Comment</TableCell>
             </TableRow>
           </TableHead>
@@ -54,7 +57,7 @@ export default function MyTimesheetsTab({ reloadKey }: { reloadKey: number }) {
             {data.results.map((row) => (
               <TableRow key={row.id} hover>
                 <TableCell>{formatDateRange(row.week_start_date, row.week_end_date)}</TableCell>
-                <TableCell align="right">{row.total_hours}</TableCell>
+                <TableCell>{row.total_hours}</TableCell>
                 <TableCell>
                   <StatusChip status={row.status} />
                 </TableCell>
@@ -64,7 +67,7 @@ export default function MyTimesheetsTab({ reloadKey }: { reloadKey: number }) {
                 <TableCell>
                   {row.decided_at ? new Date(row.decided_at).toLocaleDateString() : '-'}
                 </TableCell>
-                <TableCell sx={{ maxWidth: 260 }}>
+                <TableCell sx={{ overflowWrap: 'anywhere' }}>
                   <Typography variant="body2" noWrap title={row.decision_comment}>
                     {row.decision_comment || '-'}
                   </Typography>

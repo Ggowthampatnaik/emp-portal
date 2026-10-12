@@ -88,17 +88,6 @@ export default function LeaveStageTimeline({ request }: { request: LeaveRequest 
     <Stack
       direction={{ xs: 'column', sm: 'row' }}
       spacing={2}
-      divider={
-        <Box
-          sx={{
-            width: { xs: 0, sm: 24 },
-            height: { xs: 0, sm: 1 },
-            alignSelf: 'center',
-            borderTop: { sm: 1 },
-            borderColor: 'divider',
-          }}
-        />
-      }
       sx={{ py: 1 }}
     >
       <Stage

@@ -207,6 +207,26 @@ describe('BankDetailsCard', () => {
     );
   });
 
+  it('shows a first-time account as soon as it is saved, without a page reload', async () => {
+    const user = userEvent.setup();
+    bankAccount.mockImplementation(notFound);
+    saveBankAccount.mockResolvedValue(FULL);
+    renderCard({ isOwner: true });
+
+    await user.click(await screen.findByRole('button', { name: 'Add' }));
+    await user.click(screen.getByRole('combobox', { name: /bank name/i }));
+    await user.click(await screen.findByRole('option', { name: 'HDFC Bank' }));
+    await user.type(screen.getByLabelText(/^account number/i), '50100234567788');
+    await user.type(screen.getByLabelText(/ifsc code/i), 'HDFC0001234');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    // The 404 from the first load must not survive the save.
+    expect(await screen.findByText('50100234567788')).toBeInTheDocument();
+    expect(screen.queryByText(/no account recorded yet/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+    expect(bankAccount).toHaveBeenCalledTimes(1); // no reload needed
+  });
+
   it('shows an account saved with an unlisted bank under "Other bank"', async () => {
     const user = userEvent.setup();
     bankAccount.mockResolvedValue({ ...FULL, bank_name: 'Mahesh Sahakari Bank' });

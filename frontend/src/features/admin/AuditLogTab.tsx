@@ -141,13 +141,17 @@ export default function AuditLogTab() {
       ) : (
         <>
           <TableContainer sx={{ overflowX: 'auto' }}>
-            <Table size="small">
+            {/* Record is last and its labels are short, so it gets a fixed width
+                that fits them (longer ones wrap) instead of the spare width -
+                which went into an empty strip down the right. The spare goes
+                to the gaps between When, Who and Action. */}
+            <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 900 }}>
               <TableHead>
                 <TableRow>
-                  <TableCell>When</TableCell>
-                  <TableCell>Who</TableCell>
+                  <TableCell sx={{ width: '22%' }}>When</TableCell>
+                  <TableCell sx={{ width: '28%' }}>Who</TableCell>
                   <TableCell>Action</TableCell>
-                  <TableCell>Record</TableCell>
+                  <TableCell sx={{ width: 380 }}>Record</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>

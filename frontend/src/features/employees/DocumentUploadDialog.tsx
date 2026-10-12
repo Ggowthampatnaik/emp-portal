@@ -30,7 +30,7 @@ import { ErrorAlert } from '@/components/common/Feedback';
 import { showToast } from '@/features/ui/uiSlice';
 import { useApiAction } from '@/hooks/useApiResource';
 import { employeesApi } from '@/services/api/services';
-import { DOCUMENT_TYPES } from '@/types/documents';
+import { DOCUMENT_TYPES, SINGLE_COPY_TYPES } from '@/types/documents';
 
 const MAX_MB = 10;
 /** Matched to the server, which enforces it on the bytes rather than the name. */
@@ -38,17 +38,27 @@ const ACCEPTED = 'application/pdf,.pdf';
 
 export default function DocumentUploadDialog({
   employeeId,
+  uploadedTypes = [],
   onClose,
   onSaved,
 }: {
   employeeId: number;
+  /** Categories already on the profile; the one-copy ones among them are closed. */
+  uploadedTypes?: string[];
   onClose: () => void;
   onSaved: () => void;
 }) {
   const dispatch = useAppDispatch();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [type, setType] = useState(DOCUMENT_TYPES[0].value);
+  // 10th, 12th, Bachelor's and ID proof take one document each. Once one is
+  // there its category is greyed out here, and the form opens on the first
+  // category still open, so nobody starts filling in a slot that is taken.
+  const isTaken = (value: string) =>
+    SINGLE_COPY_TYPES.has(value) && uploadedTypes.includes(value);
+  const [type, setType] = useState(
+    () => (DOCUMENT_TYPES.find((option) => !isTaken(option.value)) ?? DOCUMENT_TYPES[0]).value,
+  );
   const [title, setTitle] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -118,8 +128,17 @@ export default function DocumentUploadDialog({
               fullWidth
             >
               {DOCUMENT_TYPES.map((option) => (
-                <MenuItem key={option.value} value={option.value}>
+                <MenuItem
+                  key={option.value}
+                  value={option.value}
+                  disabled={isTaken(option.value)}
+                >
                   {option.label}
+                  {isTaken(option.value) && (
+                    <Typography component="span" variant="caption" sx={{ ml: 1 }}>
+                      - already uploaded
+                    </Typography>
+                  )}
                 </MenuItem>
               ))}
             </TextField>

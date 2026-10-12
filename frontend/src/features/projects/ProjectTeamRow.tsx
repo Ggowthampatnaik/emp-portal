@@ -41,8 +41,13 @@ import AddTeamMemberDialog from '@/features/projects/AddTeamMemberDialog';
 import { showToast } from '@/features/ui/uiSlice';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useApiAction, useApiResource } from '@/hooks/useApiResource';
+import { TEAM_COLUMNS } from '@/features/projects/columns';
 import { projectRoleLabel } from '@/features/projects/roles';
 import { projectsApi } from '@/services/api/services';
+import { formatDate } from '@/utils/date';
+
+/** The empty column under the list's arrows: no shading, no rule. */
+const INDENT_SX = { bgcolor: 'transparent', borderBottom: 0 } as const;
 
 export default function ProjectTeamRow({ projectId }: { projectId: number }) {
   const dispatch = useAppDispatch();
@@ -104,7 +109,7 @@ export default function ProjectTeamRow({ projectId }: { projectId: number }) {
         spacing={1}
         alignItems="center"
         justifyContent="space-between"
-        sx={{ mb: 1.5 }}
+        sx={{ mb: 1.5, pl: `${TEAM_COLUMNS.indent + 16}px`, pr: 2 }}
       >
         <Stack direction="row" spacing={1.5} alignItems="baseline">
           <Typography variant="subtitle2">Assigned employees ({members.length})</Typography>
@@ -137,13 +142,15 @@ export default function ProjectTeamRow({ projectId }: { projectId: number }) {
           Nobody is currently assigned to this project.
         </Typography>
       ) : (
-        <Table size="small">
+        <Table size="small" sx={{ tableLayout: 'fixed' }}>
           <TableHead>
             <TableRow>
-              <TableCell>Employee</TableCell>
-              <TableCell>Role on project</TableCell>
-              <TableCell align="right">Allocation</TableCell>
-              {(mayStaff || mayAllocate) && <TableCell align="right" sx={{ width: 96 }} />}
+              <TableCell sx={{ ...INDENT_SX, width: TEAM_COLUMNS.indent }} />
+              <TableCell sx={{ width: TEAM_COLUMNS.employee }}>Employee</TableCell>
+              <TableCell sx={{ width: TEAM_COLUMNS.role }}>Role on project</TableCell>
+              <TableCell sx={{ width: TEAM_COLUMNS.allocation }}>Allocation</TableCell>
+              <TableCell sx={{ width: TEAM_COLUMNS.start }}>Start</TableCell>
+              <TableCell />
             </TableRow>
           </TableHead>
           <TableBody>
@@ -151,6 +158,7 @@ export default function ProjectTeamRow({ projectId }: { projectId: number }) {
               const allocation = allocationFor(member.employee);
               return (
                 <TableRow key={member.id}>
+                  <TableCell sx={INDENT_SX} />
                   <TableCell>
                     <Typography variant="body2" fontWeight={600}>
                       {member.employee_name}
@@ -169,7 +177,7 @@ export default function ProjectTeamRow({ projectId }: { projectId: number }) {
                     />
                   </TableCell>
 
-                  <TableCell align="right">
+                  <TableCell>
                     {allocation ? (
                       <Typography variant="body2" fontWeight={600}>
                         {Number(allocation.allocation_percentage).toFixed(0)}%
@@ -181,8 +189,11 @@ export default function ProjectTeamRow({ projectId }: { projectId: number }) {
                     )}
                   </TableCell>
 
-                  {(mayStaff || mayAllocate) && (
-                    <TableCell align="right">
+                  {/* When they joined this team. */}
+                  <TableCell>{formatDate(member.joined_on)}</TableCell>
+
+                  <TableCell align="right">
+                    {(mayStaff || mayAllocate) && (
                       <Stack direction="row" spacing={0.5} justifyContent="flex-end">
                         {mayAllocate && allocation && (
                           <Tooltip title="Remove allocation">
@@ -213,8 +224,8 @@ export default function ProjectTeamRow({ projectId }: { projectId: number }) {
                           </Tooltip>
                         )}
                       </Stack>
-                    </TableCell>
-                  )}
+                    )}
+                  </TableCell>
                 </TableRow>
               );
             })}

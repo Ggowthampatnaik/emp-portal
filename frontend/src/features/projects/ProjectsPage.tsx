@@ -4,7 +4,6 @@ import AddIcon from '@mui/icons-material/Add';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import Alert from '@mui/material/Alert';
-import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
 import Collapse from '@mui/material/Collapse';
@@ -30,6 +29,7 @@ import { useAppDispatch } from '@/app/hooks';
 import { EmptyState, ErrorAlert, TableSkeleton } from '@/components/common/Feedback';
 import PageHeader from '@/components/common/PageHeader';
 import StatusChip from '@/components/common/StatusChip';
+import { COLUMNS } from '@/features/projects/columns';
 import ProjectTeamRow from '@/features/projects/ProjectTeamRow';
 import { showToast } from '@/features/ui/uiSlice';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -145,7 +145,7 @@ export default function ProjectsPage() {
         </Stack>
 
         {loading ? (
-          <TableSkeleton columns={6} />
+          <TableSkeleton columns={8} />
         ) : !data?.results.length ? (
           <EmptyState
             title="No projects to show"
@@ -153,17 +153,19 @@ export default function ProjectsPage() {
           />
         ) : (
           <TableContainer sx={{ overflowX: 'auto' }}>
-            <Table size="small">
+            {/* Fixed widths: every column starts in the same place whatever the
+                names in it, and all of them read from the left. */}
+            <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 1100 }}>
               <TableHead>
                 <TableRow>
-                  <TableCell width={48} />
-                  <TableCell>Code</TableCell>
-                  <TableCell>Project</TableCell>
-                  <TableCell>Client</TableCell>
-                  <TableCell>Manager</TableCell>
-                  <TableCell align="right">Team</TableCell>
-                  <TableCell align="right">Total allocation</TableCell>
-                  <TableCell>Start</TableCell>
+                  <TableCell sx={{ width: COLUMNS.expander }} />
+                  <TableCell sx={{ width: COLUMNS.code }}>Code</TableCell>
+                  <TableCell sx={{ width: COLUMNS.project }}>Project</TableCell>
+                  <TableCell sx={{ width: COLUMNS.client }}>Client</TableCell>
+                  <TableCell sx={{ width: COLUMNS.manager }}>Manager</TableCell>
+                  <TableCell sx={{ width: COLUMNS.team }}>Team</TableCell>
+                  <TableCell sx={{ width: COLUMNS.allocation }}>Total allocation</TableCell>
+                  <TableCell sx={{ width: COLUMNS.start }}>Start</TableCell>
                   <TableCell>Status</TableCell>
                 </TableRow>
               </TableHead>
@@ -210,19 +212,18 @@ export default function ProjectsPage() {
                       </TableCell>
                       <TableCell>{row.client_name || '-'}</TableCell>
                       <TableCell>{row.project_manager_name ?? '-'}</TableCell>
-                      <TableCell align="right">{row.member_count}</TableCell>
-                      <TableCell align="right">{row.total_allocation}%</TableCell>
+                      <TableCell>{row.member_count}</TableCell>
+                      <TableCell>{row.total_allocation}%</TableCell>
                       <TableCell>{formatDate(row.start_date)}</TableCell>
                       <TableCell>
-                        <StatusChip status={row.status} />
+                        {/* As wide as the longest, "Completed", so the column is one size. */}
+                        <StatusChip status={row.status} width={85} />
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell colSpan={9} sx={{ py: 0, borderBottom: 0 }}>
+                      <TableCell colSpan={9} sx={{ p: 0, borderBottom: 0 }}>
                         <Collapse in={expanded === row.id} unmountOnExit>
-                          <Box sx={{ pl: 5, pr: 2 }}>
-                            <ProjectTeamRow projectId={row.id} />
-                          </Box>
+                          <ProjectTeamRow projectId={row.id} />
                         </Collapse>
                       </TableCell>
                     </TableRow>

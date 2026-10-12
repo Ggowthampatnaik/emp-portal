@@ -26,10 +26,11 @@ import { useCallback, useState } from 'react';
 
 import { useAppDispatch, useAppSelector } from '@/app/hooks';
 import { EmptyState, ErrorAlert, TableSkeleton } from '@/components/common/Feedback';
-import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import RestoreIcon from '@mui/icons-material/Restore';
 import PageHeader from '@/components/common/PageHeader';
-import AddUserDialog from '@/features/admin/AddUserDialog';
+import EmployeeFormDialog from '@/features/employees/EmployeeFormDialog';
+import PersonAddAlt1Icon from '@mui/icons-material/PersonAddAlt1';
 import AuditLogTab from '@/features/admin/AuditLogTab';
 import DeletionRequestsTab from '@/features/admin/DeletionRequestsTab';
 import { showToast } from '@/features/ui/uiSlice';
@@ -108,12 +109,16 @@ const USER_STATUSES = [
 function UsersTab() {
   const dispatch = useAppDispatch();
   const me = useAppSelector(selectCurrentUser);
+  const { can } = usePermissions();
+  // HR's Add employee, here too: an account *and* its employment record in one
+  // go. It is the only way an account is created - there is no bare "Add user".
+  const mayOnboard = can('employee.create');
+  const [onboarding, setOnboarding] = useState(false);
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [department, setDepartment] = useState('');
   const [skills, setSkills] = useState<number[]>([]);
-  const [adding, setAdding] = useState(false);
   const [selected, setSelected] = useState<number[]>([]);
   const [confirming, setConfirming] = useState(false);
 
@@ -137,10 +142,12 @@ function UsersTab() {
     [],
   );
   const deleteUsers = useApiAction(adminApi.deleteUsers);
+  const reactivate = useApiAction((id: number) => adminApi.updateUser(id, { is_active: true }));
 
   // The caller's own row can be listed but never deleted - the server skips
-  // it too; keeping it unselectable here just makes the rule visible.
-  const deletable = (data?.results ?? []).filter((row) => row.id !== me?.id);
+  // it too; keeping it unselectable here just makes the rule visible. Nor can
+  // someone already inactive: Delete has nothing left to do to them.
+  const deletable = (data?.results ?? []).filter((row) => row.id !== me?.id && row.is_active);
   const allOnPageSelected =
     deletable.length > 0 && deletable.every((row) => selected.includes(row.id));
 
@@ -154,14 +161,25 @@ function UsersTab() {
     );
   };
 
+  // Delete deactivates a person (history kept) and removes only a bare
+  // account with no employment behind it - so say which happened.
   const runDelete = async () => {
     const result = await deleteUsers.run({ ids: selected });
     if (!result) return;
+    const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    const parts = [];
+    if (result.deactivated)
+      parts.push(
+        `Deactivated ${plural(result.deactivated, 'person')}`.replace('persons', 'people'),
+      );
+    if (result.deleted) parts.push(`removed ${plural(result.deleted, 'login-only account')}`);
+    if (parts.length === 0) parts.push('Nothing changed');
     const skipped = result.skipped.length ? ` (${result.skipped.length} skipped)` : '';
+    const message = parts.join(', ');
     dispatch(
       showToast(
-        `Deleted ${result.deleted} account${result.deleted === 1 ? '' : 's'}${skipped}.`,
-        'info',
+        `${message.charAt(0).toUpperCase()}${message.slice(1)}${skipped}.`,
+        result.deactivated || result.deleted ? 'success' : 'info',
       ),
     );
     setConfirming(false);
@@ -250,9 +268,15 @@ function UsersTab() {
               Delete selected ({selected.length})
             </Button>
           )}
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setAdding(true)}>
-            Add user
-          </Button>
+          {mayOnboard && (
+            <Button
+              variant="contained"
+              startIcon={<PersonAddAlt1Icon />}
+              onClick={() => setOnboarding(true)}
+            >
+              Add employee
+            </Button>
+          )}
         </Stack>
       </Stack>
 
@@ -341,24 +365,48 @@ function UsersTab() {
                     {row.last_login_at ? formatDateTime(row.last_login_at) : 'Never'}
                   </TableCell>
                   <TableCell align="right">
-                    <Tooltip
-                      title={row.id === me?.id ? 'You cannot delete your own account' : ''}
-                    >
-                      <span>
-                        <IconButton
-                          size="small"
-                          color="error"
-                          aria-label={`Delete ${row.full_name}`}
-                          disabled={row.id === me?.id || deleteUsers.busy}
-                          onClick={() => {
-                            setSelected([row.id]);
-                            setConfirming(true);
-                          }}
-                        >
-                          <DeleteOutlineIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
+                    {row.is_active ? (
+                      <Tooltip
+                        title={row.id === me?.id ? 'You cannot delete your own account' : ''}
+                      >
+                        <span>
+                          <IconButton
+                            size="small"
+                            color="error"
+                            aria-label={`Delete ${row.full_name}`}
+                            disabled={row.id === me?.id || deleteUsers.busy}
+                            onClick={() => {
+                              setSelected([row.id]);
+                              setConfirming(true);
+                            }}
+                          >
+                            <DeleteOutlineIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    ) : (
+                      // Undoes a Delete: active again and able to sign in.
+                      <Tooltip title="Reactivate">
+                        <span>
+                          <IconButton
+                            size="small"
+                            color="success"
+                            aria-label={`Reactivate ${row.full_name}`}
+                            disabled={reactivate.busy}
+                            onClick={async () => {
+                              const updated = await reactivate.run(row.id);
+                              if (!updated) return;
+                              dispatch(
+                                showToast(`${row.full_name} is active again.`, 'success'),
+                              );
+                              void reload();
+                            }}
+                          >
+                            <RestoreIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -384,10 +432,10 @@ function UsersTab() {
         </ClosableDialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
-            <Alert severity="error">
-              {`${selected.length} account${selected.length === 1 ? '' : 's'} will be permanently deleted, along with each person's employment record, leave, timesheets and documents.`}{' '}
-              This cannot be undone. To deactivate instead, use account settings rather than
-              deleting.
+            <Alert severity="warning">
+              {`${selected.length === 1 ? 'This person' : `These ${selected.length} people`} will be deactivated: marked inactive and no longer able to sign in.`}{' '}
+              Their leave, timesheets, payslips and documents are kept. Use Reactivate on their
+              row to bring them back.
             </Alert>
           </Stack>
         </DialogContent>
@@ -404,12 +452,13 @@ function UsersTab() {
         </DialogActions>
       </Dialog>
 
-      {adding && (
-        <AddUserDialog
-          onClose={() => setAdding(false)}
-          onCreated={(user) => {
-            setAdding(false);
-            dispatch(showToast(`${user.email} can now sign in.`, 'success'));
+      {mayOnboard && (
+        <EmployeeFormDialog
+          open={onboarding}
+          onClose={() => setOnboarding(false)}
+          onSaved={() => {
+            // The form announces the new joiner itself.
+            setOnboarding(false);
             void reload();
           }}
         />

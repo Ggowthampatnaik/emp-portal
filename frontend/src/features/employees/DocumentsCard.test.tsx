@@ -92,6 +92,7 @@ describe('DocumentsCard', () => {
 
   it('offers every category the business asks for', async () => {
     const user = userEvent.setup();
+    documents.mockResolvedValue([]);
     renderCard();
 
     await user.click(await screen.findByRole('button', { name: /add document/i }));
@@ -113,6 +114,7 @@ describe('DocumentsCard', () => {
 
   it('uploads the file with its type', async () => {
     const user = userEvent.setup();
+    documents.mockResolvedValue([]);
     renderCard();
 
     await user.click(await screen.findByRole('button', { name: /add document/i }));
@@ -130,6 +132,7 @@ describe('DocumentsCard', () => {
 
   it('names the file after its category when nobody typed a title', async () => {
     const user = userEvent.setup();
+    documents.mockResolvedValue([]);
     renderCard();
 
     await user.click(await screen.findByRole('button', { name: /add document/i }));
@@ -142,6 +145,57 @@ describe('DocumentsCard', () => {
     await waitFor(() => expect(uploadDocument).toHaveBeenCalled());
     const form = uploadDocument.mock.calls[0][1] as FormData;
     expect(form.get('title')).toBe('10th certificate');
+  });
+
+  it('closes a one-copy category once its document is there', async () => {
+    const user = userEvent.setup();
+    documents.mockResolvedValue([
+      doc(),
+      doc({ id: 2, document_type: 'id_proof', title: 'Aadhaar' }),
+      doc({ id: 3, document_type: 'masters', title: 'M.Tech' }),
+    ]);
+    renderCard();
+
+    await user.click(await screen.findByRole('button', { name: /add document/i }));
+    // Opens on the first category still open, not on the taken 10th.
+    expect(screen.getByLabelText(/document type/i)).toHaveTextContent('12th certificate');
+
+    await user.click(screen.getByLabelText(/document type/i));
+    for (const taken of [/^10th certificate/, /^ID proof/]) {
+      const option = screen.getByRole('option', { name: taken });
+      expect(option).toHaveAttribute('aria-disabled', 'true');
+      expect(option).toHaveTextContent('already uploaded');
+    }
+    // Master's takes several, so having one closes nothing.
+    expect(screen.getByRole('option', { name: "Master's certificate" })).not.toHaveAttribute(
+      'aria-disabled',
+    );
+  });
+
+  it("shows the server's refusal against the document type", async () => {
+    const user = userEvent.setup();
+    documents.mockResolvedValue([]);
+    uploadDocument.mockRejectedValue({
+      code: 'validation_error',
+      message: 'Invalid input.',
+      requestId: 'req-1',
+      status: 400,
+      fieldErrors: {
+        document_type: 'A 10th certificate is already uploaded. Only one is allowed.',
+      },
+    });
+    renderCard();
+
+    await user.click(await screen.findByRole('button', { name: /add document/i }));
+    await user.upload(
+      screen.getByLabelText(/document file/i),
+      new File(['%PDF-1.4 marks'], 'tenth.pdf', { type: 'application/pdf' }),
+    );
+    await user.click(screen.getByRole('button', { name: /attach/i }));
+
+    expect(
+      await screen.findByText(/already uploaded. Only one is allowed/),
+    ).toBeInTheDocument();
   });
 
   it('will not upload without a file', async () => {

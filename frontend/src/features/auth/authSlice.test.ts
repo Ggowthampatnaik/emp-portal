@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import authReducer, {
   clearAuthError,
+  refreshCurrentUser,
   selectHasPermission,
   selectHasRole,
   selectIsAuthenticated,
@@ -39,6 +40,30 @@ describe('authSlice', () => {
     expect(state.user).toBeNull();
     expect(state.error).toMatch(/expired/i);
     expect(state.initialising).toBe(false);
+  });
+
+  it('refreshes the user quietly, never back into the start-up loading state', () => {
+    // restoreSession sets `initialising`, which shows "Restoring your session..."
+    // in place of the app. A mid-session refresh must not.
+    const authed = authReducer({ ...initial, initialising: false }, setUser(makeUser()));
+    const pending = authReducer(authed, refreshCurrentUser.pending('req', undefined));
+    expect(pending.initialising).toBe(false);
+
+    const updated = makeUser({ profile_completed: true });
+    const done = authReducer(pending, refreshCurrentUser.fulfilled(updated, 'req', undefined));
+    expect(done.user).toEqual(updated);
+    expect(done.initialising).toBe(false);
+    expect(done.status).toBe('authenticated');
+  });
+
+  it('keeps the session when a quiet refresh fails', () => {
+    const authed = authReducer({ ...initial, initialising: false }, setUser(makeUser()));
+    const failed = authReducer(
+      authed,
+      refreshCurrentUser.rejected(new Error('offline'), 'req', undefined, 'offline'),
+    );
+    expect(failed.user).not.toBeNull();
+    expect(failed.status).toBe('authenticated');
   });
 
   it('clears the error on demand', () => {
