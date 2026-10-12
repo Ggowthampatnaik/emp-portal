@@ -46,6 +46,9 @@ import { projectRoleLabel } from '@/features/projects/roles';
 import { projectsApi } from '@/services/api/services';
 import { formatDate } from '@/utils/date';
 
+/** Left edge of the panel's text: under the list's arrows, level with the names. */
+const TEXT_INDENT = `${TEAM_COLUMNS.indent + 16}px`;
+
 /** The empty column under the list's arrows: no shading, no rule. */
 const INDENT_SX = { bgcolor: 'transparent', borderBottom: 0 } as const;
 
@@ -109,7 +112,7 @@ export default function ProjectTeamRow({ projectId }: { projectId: number }) {
         spacing={1}
         alignItems="center"
         justifyContent="space-between"
-        sx={{ mb: 1.5, pl: `${TEAM_COLUMNS.indent + 16}px`, pr: 2 }}
+        sx={{ mb: 1.5, pl: TEXT_INDENT, pr: 2 }}
       >
         <Stack direction="row" spacing={1.5} alignItems="baseline">
           <Typography variant="subtitle2">Assigned employees ({members.length})</Typography>
@@ -138,7 +141,7 @@ export default function ProjectTeamRow({ projectId }: { projectId: number }) {
       {removeAllocation.error && <ErrorAlert error={removeAllocation.error} />}
 
       {members.length === 0 ? (
-        <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ py: 2, pl: TEXT_INDENT }}>
           Nobody is currently assigned to this project.
         </Typography>
       ) : (
@@ -236,7 +239,11 @@ export default function ProjectTeamRow({ projectId }: { projectId: number }) {
       {/* Allocated but not on the team: a real state, and one nobody would
           otherwise see, because the table above is driven by membership. */}
       {allocations.some((a) => !members.some((m) => m.employee === a.employee)) && (
-        <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 1.5 }}>
+        <Typography
+          variant="caption"
+          color="warning.main"
+          sx={{ display: 'block', mt: 1.5, pl: TEXT_INDENT }}
+        >
           Some allocations belong to people who are no longer on the team.
         </Typography>
       )}
