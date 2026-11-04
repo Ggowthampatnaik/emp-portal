@@ -109,6 +109,11 @@ export default function LeaveBalancesTab({
           const entitled = Number(balance.entitled_days);
           const used = Number(balance.used_days);
           const pending = Number(balance.pending_days);
+          // Unpaid leave (Loss of Pay). With an allowance (60 days a year) it is
+          // a normal card counting down, plus a note that the days are unpaid;
+          // only with no allowance at all does the card count days taken.
+          const unpaid = balance.leave_type_is_paid === false;
+          const uncapped = unpaid && entitled <= 0;
           const usedPercent = entitled > 0 ? (used / entitled) * 100 : 0;
           const pendingPercent = entitled > 0 ? (pending / entitled) * 100 : 0;
 
@@ -139,7 +144,11 @@ export default function LeaveBalancesTab({
                   another tab to work it out. */}
               <CardActionArea
                 onClick={() => setSelected(balance)}
-                aria-label={`${balance.leave_type_name}: ${balance.available_days} days available`}
+                aria-label={
+                  uncapped
+                    ? `${balance.leave_type_name}: ${balance.used_days} unpaid days taken`
+                    : `${balance.leave_type_name}: ${balance.available_days} days available`
+                }
                 sx={{ height: '100%', display: 'block', textAlign: 'left' }}
               >
                 <CardContent>
@@ -154,10 +163,12 @@ export default function LeaveBalancesTab({
 
                   <Stack direction="row" spacing={1} alignItems="baseline" sx={{ mt: 1.5 }}>
                     <Typography variant="h2" component="p">
-                      {balance.available_days}
+                      {uncapped ? balance.used_days : balance.available_days}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      of {balance.entitled_days} days available
+                      {uncapped
+                        ? `unpaid day${used === 1 ? '' : 's'} taken`
+                        : `of ${balance.entitled_days} days available`}
                     </Typography>
                   </Stack>
 
@@ -171,7 +182,15 @@ export default function LeaveBalancesTab({
                     nothing still paints its full-width track, so Loss of Pay
                     - which is 0 of 0 by definition - read as a completely
                     full bar, the exact opposite of the truth. */}
-                  {entitled > 0 ? (
+                  {uncapped ? (
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ mt: 1.5, display: 'block' }}
+                    >
+                      No allowance needed — each day is deducted from that month&apos;s salary.
+                    </Typography>
+                  ) : entitled > 0 ? (
                     <Box sx={{ position: 'relative', mt: 1.5 }}>
                       <LinearProgress
                         variant="determinate"
@@ -199,6 +218,16 @@ export default function LeaveBalancesTab({
                       sx={{ mt: 1.5, display: 'block' }}
                     >
                       No entitlement — taken as unpaid.
+                    </Typography>
+                  )}
+
+                  {unpaid && !uncapped && (
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ mt: 1, display: 'block' }}
+                    >
+                      Unpaid — each day is deducted from that month&apos;s salary.
                     </Typography>
                   )}
 

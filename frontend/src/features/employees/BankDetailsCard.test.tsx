@@ -90,6 +90,21 @@ describe('BankDetailsCard', () => {
     expect(screen.queryByText('50100234567788')).not.toBeInTheDocument();
   });
 
+  it('shows HR a read-only card on a record they may only view', async () => {
+    renderCard({ canManage: true, readOnly: true });
+
+    expect(await screen.findByText('XXXXXXXXXX7788')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /edit/i })).not.toBeInTheDocument();
+  });
+
+  it('offers no Add on a read-only card with no account yet', async () => {
+    bankAccount.mockImplementation(notFound);
+    renderCard({ canManage: true, readOnly: true });
+
+    expect(await screen.findByText(/no account recorded yet/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /add/i })).not.toBeInTheDocument();
+  });
+
   it('renders nothing at all for a reporting manager', async () => {
     renderCard({ isOwner: false, canManage: false });
 

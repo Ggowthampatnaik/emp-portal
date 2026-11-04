@@ -89,6 +89,8 @@ export const restoreSession = createAsyncThunk<
 export const refreshCurrentUser = createAsyncThunk<CurrentUser, void, { rejectValue: string }>(
   'auth/refreshCurrentUser',
   async (_, { rejectWithValue }) => {
+    // Nobody signed in, nothing to re-read - the same guard restoreSession has.
+    if (!tokenStorage.getAccess()) return rejectWithValue('Not signed in.');
     try {
       return await authService.fetchCurrentUser();
     } catch (error) {

@@ -110,7 +110,7 @@ def save_entries(timesheet: Timesheet, rows: list[dict]) -> Timesheet:
             )
         if work_date > today:
             raise BusinessRuleViolation(
-                f"{work_date} has not happened yet. Hours can only be booked " "up to today."
+                f"{work_date} has not happened yet. Hours can only be booked up to today."
             )
         project_id = project.pk if isinstance(project, Project) else int(project)
         if allowed_projects and project_id not in allowed_projects:
@@ -295,7 +295,18 @@ def _sheets_for_week(week_monday: date) -> dict[int, Timesheet]:
     }
 
 
-def _status_row(employee: Employee, sheet: Timesheet | None) -> dict:
+def _reminders_for_week(week_monday: date) -> dict:
+    """When each employee was last reminded about that week, keyed by employee."""
+    from apps.timesheets.models import TimesheetReminder
+
+    return dict(
+        TimesheetReminder.objects.filter(week_start_date=week_monday).values_list(
+            "employee_id", "sent_at"
+        )
+    )
+
+
+def _status_row(employee: Employee, sheet: Timesheet | None, reminded_at=None) -> dict:
     status = sheet.status if sheet else None
     return {
         "employee_id": employee.pk,
@@ -309,18 +320,24 @@ def _status_row(employee: Employee, sheet: Timesheet | None) -> dict:
         "total_hours": sheet.total_hours if sheet else None,
         # "Submitted" means it left the employee's hands - pending or approved.
         "submitted": status in SUBMITTED_STATES,
+        # Already reminded about this week - the board shows "Sent" for them.
+        "reminded_at": reminded_at,
     }
 
 
 def submission_status_by_employee(week_monday: date) -> list[dict]:
     """Every active employee and whether they submitted that week."""
     sheets = _sheets_for_week(week_monday)
+    reminded = _reminders_for_week(week_monday)
     employees = (
         Employee.objects.filter(employment_status=EmploymentStatus.ACTIVE)
         .select_related("user", "department", "designation")
         .order_by("employee_code")
     )
-    return [_status_row(employee, sheets.get(employee.pk)) for employee in employees]
+    return [
+        _status_row(employee, sheets.get(employee.pk), reminded.get(employee.pk))
+        for employee in employees
+    ]
 
 
 def submission_status_by_project(week_monday: date) -> list[dict]:
@@ -328,6 +345,7 @@ def submission_status_by_project(week_monday: date) -> list[dict]:
     from apps.projects.models import Project
 
     sheets = _sheets_for_week(week_monday)
+    reminded = _reminders_for_week(week_monday)
     projects = (
         Project.objects.exclude(status=Project.Status.CANCELLED)
         .prefetch_related(
@@ -347,7 +365,10 @@ def submission_status_by_project(week_monday: date) -> list[dict]:
             if member.left_on is None
             and member.employee.employment_status == EmploymentStatus.ACTIVE
         ]
-        employees = [_status_row(employee, sheets.get(employee.pk)) for employee in members]
+        employees = [
+            _status_row(employee, sheets.get(employee.pk), reminded.get(employee.pk))
+            for employee in members
+        ]
         rows.append(
             {
                 "project_id": project.pk,
@@ -378,6 +399,8 @@ def notify_missing_timesheets(week_monday: date, employee_ids: list[int], actor)
         pk__in=employee_ids, employment_status=EmploymentStatus.ACTIVE
     ).select_related("user")
 
+    from apps.timesheets.models import TimesheetReminder
+
     week_end = week_monday + timedelta(days=6)
     notified = []
     for employee in employees:
@@ -396,6 +419,11 @@ def notify_missing_timesheets(week_monday: date, employee_ids: list[int], actor)
             kind=Notification.Kind.TIMESHEET_SUBMITTED,
             level=Notification.Level.WARNING,
             link="/timesheets",
+        )
+        TimesheetReminder.objects.update_or_create(
+            employee=employee,
+            week_start_date=week_monday,
+            defaults={"sent_at": timezone.now(), "sent_by": actor},
         )
         notified.append(employee.employee_code)
 

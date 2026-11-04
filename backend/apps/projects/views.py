@@ -15,6 +15,7 @@ from apps.projects.serializers import (
     ProjectListSerializer,
     ProjectMemberSerializer,
 )
+from apps.projects.services import notify_added_to_team, notify_allocated
 from common.audit import record_audit
 from common.enums import AuditAction
 from common.permissions import HasModulePermission
@@ -117,6 +118,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         member = serializer.save()
         record_audit(request, AuditAction.CREATE, member)
+        notify_added_to_team(member, assigned_by=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @extend_schema(responses={200: ProjectMemberSerializer})
@@ -161,6 +163,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
             allocation,
             changes={"allocation_percentage": str(allocation.allocation_percentage)},
         )
+        notify_allocated(allocation, assigned_by=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @extend_schema(responses={200: ProjectAllocationSerializer})

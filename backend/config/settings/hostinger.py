@@ -1,4 +1,4 @@
-"""Production settings for a Hostinger VPS: PostgreSQL (or MySQL/MariaDB),
+"""Production settings for a Hostinger VPS: MySQL (or MariaDB, or PostgreSQL),
 uploads on local disk, and no Redis.
 
 Everything in prod.py still applies - HTTPS, HSTS, the refusal to start on the
@@ -11,8 +11,8 @@ from .prod import *  # noqa: F403
 from .prod import STORAGES, env
 
 # --- Database ---------------------------------------------------------------
-# DATABASE_URL=postgres://user:password@localhost:5432/dbname   (recommended)
-# DATABASE_URL=mysql://user:password@localhost:3306/dbname      (also works)
+# DATABASE_URL=mysql://user:password@localhost:3306/dbname      (what we ship)
+# DATABASE_URL=postgres://user:password@localhost:5432/dbname   (also works)
 _database = {
     **env.db_url("DATABASE_URL"),
     "ATOMIC_REQUESTS": True,

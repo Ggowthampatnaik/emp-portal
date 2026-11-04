@@ -231,7 +231,13 @@ def validate_request(
     assert_no_overlap(employee, start, end, exclude_pk=exclude_pk)
 
     balance = get_or_create_balance(employee, leave_type, start.year)
-    if days > balance.available_days:
+    # Every type with an allowance is held to it - Loss of Pay included, which
+    # is capped at its own yearly allowance (60 days) even though the days are
+    # unpaid. Only an unpaid type with *no* allowance at all is uncapped: there
+    # is nothing to count down from, and checking it against 0 would refuse
+    # every request.
+    uncapped = not leave_type.is_paid and balance.entitled_days <= 0
+    if not uncapped and days > balance.available_days:
         raise BusinessRuleViolation(
             f"Insufficient {leave_type.name} balance: {balance.available_days} day(s) "
             f"available, {days} requested."
@@ -592,6 +598,87 @@ def hr_send_back(request_id: int, actor, comment: str) -> LeaveRequest:
         level=Notification.Level.WARNING,
         link="/leave",
     )
+    return leave_request
+
+
+@transaction.atomic
+def edit_leave(
+    request_id: int,
+    actor,
+    leave_type: LeaveType,
+    start: date,
+    end: date,
+    reason: str,
+    day_part: str = LeaveRequest.DayPart.FULL,
+    contact_number: str = "",
+) -> LeaveRequest:
+    """Changes a request that is still waiting for the reporting manager.
+
+    Only the person it belongs to, and only before anyone has acted on it: once
+    the manager has approved, HR is confirming a decision made about the old
+    dates. Every rule a new request meets is run again on the new details
+    (dates, overlap - not with itself - and balance), and the reserved days
+    move with it: released from the old type and year, held on the new.
+    """
+    leave_request = (
+        LeaveRequest.objects.select_for_update()
+        .select_related("employee__user", "leave_type")
+        .get(pk=request_id)
+    )
+    employee = leave_request.employee
+    if employee.user_id != actor.pk:
+        raise WorkflowStateError("Only the person who applied can edit this request.")
+    if leave_request.status != LeaveStatus.PENDING_MANAGER:
+        raise WorkflowStateError(
+            "Only a request still waiting for your manager can be edited. "
+            "Cancel it and apply again instead."
+        )
+
+    # Release the old reservation first, so the new days are checked against
+    # a balance that no longer counts them.
+    old = _locked_balance(employee.pk, leave_request.leave_type_id, leave_request.year)
+    old.pending_days = max(Decimal("0"), old.pending_days - leave_request.total_days)
+    old.save(update_fields=["pending_days", "updated_at"])
+
+    days = validate_request(employee, leave_type, start, end, day_part, exclude_pk=leave_request.pk)
+
+    leave_request.leave_type = leave_type
+    leave_request.start_date = start
+    leave_request.end_date = end
+    leave_request.day_part = day_part
+    leave_request.total_days = days
+    leave_request.reason = reason
+    leave_request.contact_number = contact_number
+    leave_request.save(
+        update_fields=[
+            "leave_type",
+            "start_date",
+            "end_date",
+            "day_part",
+            "total_days",
+            "reason",
+            "contact_number",
+            "updated_at",
+        ]
+    )
+
+    new = _locked_balance(employee.pk, leave_type.pk, start.year)
+    new.pending_days += days
+    new.save(update_fields=["pending_days", "updated_at"])
+
+    approver = approver_for(employee)
+    if approver:
+        notify(
+            approver,
+            title=f"Leave request updated by {employee.full_name}",
+            message=(
+                f"{employee.full_name} changed their request: now {days_phrase(days)} of "
+                f"{leave_type.name}, {human_range(start, end)}.\n\nReason: {reason}"
+            ),
+            kind=Notification.Kind.LEAVE_APPLIED,
+            level=Notification.Level.INFO,
+            link="/leave/approvals",
+        )
     return leave_request
 
 

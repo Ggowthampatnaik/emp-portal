@@ -121,3 +121,17 @@ describe('DashboardPage quick actions', () => {
     );
   });
 });
+
+describe('DashboardPage My work', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dashboard.mockResolvedValue(SUMMARY);
+  });
+
+  it('labels the hours card Timesheet', async () => {
+    renderPage();
+
+    expect(await screen.findByText('Timesheet')).toBeInTheDocument();
+    expect(screen.queryByText('This week')).not.toBeInTheDocument();
+  });
+});

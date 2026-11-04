@@ -149,9 +149,9 @@ def test_hr_sends_it_back_to_the_manager(org, request_pending_hr):
     assert updated.status == LeaveStatus.PENDING_MANAGER
     assert updated.hr_status == LeaveStageStatus.SENT_BACK
     assert updated.hr_comment == "Two others are off that week."
-    assert (
-        updated.manager_status == LeaveStageStatus.PENDING
-    ), "the manager decides again from scratch, rather than the old approval standing"
+    assert updated.manager_status == LeaveStageStatus.PENDING, (
+        "the manager decides again from scratch, rather than the old approval standing"
+    )
 
 
 @pytest.mark.django_db

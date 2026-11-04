@@ -36,6 +36,56 @@ import { formatDate, formatDateRange } from '@/utils/date';
 
 type Decision = 'approve' | 'reject';
 
+/**
+ * Column widths shared by the requests table and the "What was done" table
+ * that opens under a row. Both span the same width, so the same percentages
+ * line up: Date under Employee, Project under Week, Hours under Hours, and the
+ * task description across Submitted and Decision. Everything reads from the
+ * left. Decision is as wide as its two buttons (Approve 97px + Return 86px)
+ * and no wider, so there is no empty strip on the right; Employee (and Date
+ * under it) takes the spare width.
+ */
+const COL = {
+  expander: 56,
+  week: '20%',
+  hours: '12%',
+  submitted: '14%',
+  decision: 230,
+} as const;
+
+/**
+ * The one set of column widths, given to both tables. A <colgroup> rather
+ * than widths on header cells, because the inner table's task description
+ * spans the Submitted and Decision columns - one cell cannot carry two widths.
+ */
+function Columns() {
+  return (
+    <colgroup>
+      <col style={{ width: COL.expander }} />
+      <col />
+      <col style={{ width: COL.week }} />
+      <col style={{ width: COL.hours }} />
+      <col style={{ width: COL.submitted }} />
+      <col style={{ width: COL.decision }} />
+    </colgroup>
+  );
+}
+
+/**
+ * The "What was done" table's own columns. Sized so the space after each
+ * column's text comes out about the same - Date ("31 Aug 2026"), Project
+ * ("PRJ-001") and a typical one-line task description - with Task description
+ * taking what is left. Hours is last and only as wide as its heading, so
+ * nothing trails after it. Date still starts under Employee.
+ */
+const ENTRY_COL = { date: '28.3%', project: '29.5%', hours: 90 } as const;
+
+/** The empty first column of the inner table, under the arrows. */
+const INDENT_SX = { bgcolor: 'transparent', borderBottom: 0 } as const;
+
+/** Left edge of the panel's text, level with the employee names. */
+const TEXT_INDENT = `${COL.expander + 16}px`;
+
 export default function TimesheetApprovalsTab({
   reloadKey,
   onChanged,
@@ -114,15 +164,16 @@ export default function TimesheetApprovalsTab({
     <>
       {actionError && <ErrorAlert error={actionError} />}
       <TableContainer sx={{ overflowX: 'auto' }}>
-        <Table size="small">
+        <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 1000 }}>
+          <Columns />
           <TableHead>
             <TableRow>
-              <TableCell width={48} />
+              <TableCell />
               <TableCell>Employee</TableCell>
               <TableCell>Week</TableCell>
-              <TableCell align="right">Hours</TableCell>
+              <TableCell>Hours</TableCell>
               <TableCell>Submitted</TableCell>
-              <TableCell align="right">Decision</TableCell>
+              <TableCell>Decision</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -154,12 +205,12 @@ export default function TimesheetApprovalsTab({
                   <TableCell>
                     {formatDateRange(row.week_start_date, row.week_end_date)}
                   </TableCell>
-                  <TableCell align="right">{row.total_hours}</TableCell>
+                  <TableCell>{row.total_hours}</TableCell>
                   <TableCell>
                     {row.submitted_at ? new Date(row.submitted_at).toLocaleDateString() : '-'}
                   </TableCell>
-                  <TableCell align="right">
-                    <Stack direction="row" spacing={1} justifyContent="flex-end">
+                  <TableCell>
+                    <Stack direction="row" spacing={1}>
                       <Button
                         size="small"
                         variant="contained"
@@ -190,14 +241,16 @@ export default function TimesheetApprovalsTab({
                   </TableCell>
                 </TableRow>
                 <TableRow>
-                  <TableCell colSpan={6} sx={{ py: 0, borderBottom: 0 }}>
+                  <TableCell colSpan={6} sx={{ p: 0, borderBottom: 0 }}>
                     <Collapse in={expanded === row.id} unmountOnExit>
-                      <Stack spacing={1} sx={{ py: 2, pl: 6 }}>
+                      <Stack spacing={1} sx={{ py: 2 }}>
                         {!detail ? (
-                          <LinearProgress sx={{ maxWidth: 240 }} />
+                          <LinearProgress sx={{ maxWidth: 240, ml: TEXT_INDENT }} />
                         ) : (
                           <>
-                            <Typography variant="subtitle2">Breakdown by project</Typography>
+                            <Typography variant="subtitle2" sx={{ pl: TEXT_INDENT }}>
+                              Breakdown by project
+                            </Typography>
                             {Object.entries(
                               detail.entries.reduce<Record<string, number>>((acc, entry) => {
                                 const key = `${entry.project_code} — ${entry.project_name}`;
@@ -205,23 +258,33 @@ export default function TimesheetApprovalsTab({
                                 return acc;
                               }, {}),
                             ).map(([project, hours]) => (
-                              <Typography key={project} variant="body2">
+                              <Typography
+                                key={project}
+                                variant="body2"
+                                sx={{ pl: TEXT_INDENT }}
+                              >
                                 {project}: <strong>{hours.toFixed(2)} h</strong>
                               </Typography>
                             ))}
 
-                            <Typography variant="subtitle2" sx={{ pt: 1 }}>
+                            <Typography variant="subtitle2" sx={{ pt: 1, pl: TEXT_INDENT }}>
                               What was done
                             </Typography>
-                            <Table size="small">
+                            <Table size="small" sx={{ tableLayout: 'fixed' }}>
+                              <colgroup>
+                                <col style={{ width: COL.expander }} />
+                                <col style={{ width: ENTRY_COL.date }} />
+                                <col style={{ width: ENTRY_COL.project }} />
+                                <col />
+                                <col style={{ width: ENTRY_COL.hours }} />
+                              </colgroup>
                               <TableHead>
                                 <TableRow>
-                                  <TableCell width={110}>Date</TableCell>
-                                  <TableCell width={120}>Project</TableCell>
-                                  <TableCell width={70} align="right">
-                                    Hours
-                                  </TableCell>
+                                  <TableCell sx={INDENT_SX} />
+                                  <TableCell>Date</TableCell>
+                                  <TableCell>Project</TableCell>
                                   <TableCell>Task description</TableCell>
+                                  <TableCell>Hours</TableCell>
                                 </TableRow>
                               </TableHead>
                               <TableBody>
@@ -229,11 +292,13 @@ export default function TimesheetApprovalsTab({
                                   .sort((a, b) => a.work_date.localeCompare(b.work_date))
                                   .map((entry) => (
                                     <TableRow key={entry.id}>
-                                      <TableCell>{entry.work_date}</TableCell>
-                                      <TableCell>{entry.project_code}</TableCell>
-                                      <TableCell align="right">
-                                        {Number(entry.hours).toFixed(2)}
+                                      <TableCell sx={INDENT_SX} />
+                                      {/* "31 Aug 2026", on one line - the raw
+                                          2026-08-31 wrapped in its column. */}
+                                      <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                                        {formatDate(entry.work_date)}
                                       </TableCell>
+                                      <TableCell>{entry.project_code}</TableCell>
                                       <TableCell>
                                         <Typography
                                           variant="body2"
@@ -244,13 +309,18 @@ export default function TimesheetApprovalsTab({
                                           {entry.description || 'No description given'}
                                         </Typography>
                                       </TableCell>
+                                      <TableCell>{Number(entry.hours).toFixed(2)}</TableCell>
                                     </TableRow>
                                   ))}
                               </TableBody>
                             </Table>
 
                             {detail.comments && (
-                              <Typography variant="caption" color="text.secondary">
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                sx={{ pl: TEXT_INDENT }}
+                              >
                                 Employee note: {detail.comments}
                               </Typography>
                             )}

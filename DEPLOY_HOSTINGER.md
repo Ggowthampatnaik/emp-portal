@@ -2,17 +2,17 @@
 
 ## Which Hostinger plan
 
-The portal's backend is a **Python (Django) application** with a **PostgreSQL**
-database. Hostinger's shared and Cloud web hosting plans run PHP sites with
-MySQL and cannot keep a Python app or PostgreSQL running, so the portal needs a
-**Hostinger VPS** (KVM 1 or larger, Ubuntu 24.04). PostgreSQL is installed on
-the same VPS in step 1.
+The portal's backend is a **Python (Django) application** with a **MySQL**
+database. Hostinger's shared and Cloud web hosting plans include MySQL, but they
+run PHP sites and cannot keep a Python app running - so the database alone would
+work there and the portal would not. It needs a **Hostinger VPS** (KVM 1 or
+larger, Ubuntu 24.04). MySQL is installed on the same VPS in step 1.
 
 ## What is in this package
 
 | Path | What it is |
 | --- | --- |
-| `database/emp_portal_postgres.sql.gz` | The portal's data as a PostgreSQL dump (plain SQL, gzipped, no owners - restores under any user) |
+| `database/emp_portal_mysql.sql.gz` | The portal's data as a MySQL dump (plain SQL, gzipped, no `CREATE DATABASE` or `DEFINER` - restores into any database, MySQL 8 or MariaDB 10.6+) |
 | `backend/` | The Django API. Settings for this server: `config/settings/hostinger.py` |
 | `backend/.env.hostinger.example` | Every setting the server needs - copy to `backend/.env` |
 | `backend/media/` | Uploaded photos and documents |
@@ -31,14 +31,14 @@ Old sign-in sessions and pending password resets were cleared from the dump.
 ```bash
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y python3 python3-venv python3-dev build-essential \
-    postgresql postgresql-contrib nginx unzip certbot python3-certbot-nginx
+    pkg-config default-libmysqlclient-dev mysql-server nginx certbot python3-certbot-nginx
 ```
 
-Upload the zip (hPanel file manager, or `scp`) and unpack it:
+Upload the archive (`scp`, or the VPS browser terminal) and unpack it:
 
 ```bash
 sudo mkdir -p /srv/emp-portal && sudo chown $USER /srv/emp-portal
-unzip trigyan-portal-hostinger.zip -d /srv/emp-portal
+tar -xzf trigyan-portal-hostinger.tar.gz -C /srv/emp-portal
 cd /srv/emp-portal/emp-portal
 ```
 
@@ -47,14 +47,17 @@ cd /srv/emp-portal/emp-portal
 Create a user and an empty database:
 
 ```bash
-sudo -u postgres psql -c "CREATE USER emp_portal WITH PASSWORD 'CHOOSE-A-STRONG-PASSWORD';"
-sudo -u postgres psql -c "CREATE DATABASE emp_portal OWNER emp_portal ENCODING 'UTF8';"
+sudo mysql <<'SQL'
+CREATE DATABASE emp_portal CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'emp_portal'@'localhost' IDENTIFIED BY 'CHOOSE-A-STRONG-PASSWORD';
+GRANT ALL PRIVILEGES ON emp_portal.* TO 'emp_portal'@'localhost';
+SQL
 ```
 
 Import the data:
 
 ```bash
-gunzip -c database/emp_portal_postgres.sql.gz | psql -h localhost -U emp_portal -d emp_portal
+gunzip -c database/emp_portal_mysql.sql.gz | mysql -u emp_portal -p emp_portal
 ```
 
 ## 3. Backend
@@ -78,7 +81,7 @@ Run it as a service - `/etc/systemd/system/emp-portal.service`
 ```ini
 [Unit]
 Description=Trigyan Employee Portal API
-After=network.target postgresql.service
+After=network.target mysql.service
 
 [Service]
 User=www-data
@@ -152,7 +155,7 @@ Open `https://portal.example.com`, sign in as `priya.menon@trigyan.io` /
 Back the database up first:
 
 ```bash
-pg_dump -h localhost -U emp_portal -d emp_portal --no-owner | gzip > backup-$(date +%F).sql.gz
+mysqldump --single-transaction --no-tablespaces -u emp_portal -p emp_portal | gzip > backup-$(date +%F).sql.gz
 ```
 
 Then upload the new code and:

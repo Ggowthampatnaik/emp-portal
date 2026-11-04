@@ -43,6 +43,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { useApiAction, useApiResource } from '@/hooks/useApiResource';
 import { timesheetsApi } from '@/services/api/services';
 import { addDays, formatDateRange, fromIsoDate, mondayOf, toIsoDate } from '@/utils/date';
+import TimesheetDetailsDialog from '@/features/timesheet/TimesheetDetailsDialog';
 import type { ProjectSubmissionRow, SubmissionStatusRow } from '@/types/domain';
 
 /** The Monday of the week that finished before today — what HR chases. */
@@ -94,12 +95,16 @@ function ReminderCell({
   row,
   onNotify,
   mayNotify,
-  busy,
+  sending,
+  sent,
 }: {
   row: SubmissionStatusRow;
   onNotify: (row: SubmissionStatusRow) => void;
   mayNotify: boolean;
-  busy: boolean;
+  /** This row's reminder is on its way. */
+  sending: boolean;
+  /** Already reminded this week - the button stays off, so it is not sent twice. */
+  sent: boolean;
 }) {
   if (row.submitted) {
     return (
@@ -117,9 +122,9 @@ function ReminderCell({
           startIcon={<NotificationsActiveIcon />}
           sx={NOTIFY_BUTTON_SX}
           onClick={() => onNotify(row)}
-          disabled={!mayNotify || busy}
+          disabled={!mayNotify || sending || sent}
         >
-          Notify
+          {sent ? 'Sent' : 'Notify'}
         </Button>
       </span>
     </Tooltip>
@@ -131,13 +136,20 @@ function EmployeeRows({
   rows,
   onNotify,
   mayNotify,
-  busy,
+  sendingId,
+  sentIds,
+  onOpen,
   dense,
 }: {
   rows: SubmissionStatusRow[];
   onNotify: (row: SubmissionStatusRow) => void;
   mayNotify: boolean;
-  busy: boolean;
+  /** The employee whose reminder is on its way, if any. */
+  sendingId: number | null;
+  /** Employees already reminded this week. */
+  sentIds: Set<number>;
+  /** Opens this person's timesheet for the week. */
+  onOpen: (row: SubmissionStatusRow) => void;
   dense?: boolean;
 }) {
   return (
@@ -156,7 +168,12 @@ function EmployeeRows({
       </TableHead>
       <TableBody>
         {rows.map((row) => (
-          <TableRow key={row.employee_id} hover>
+          <TableRow
+            key={row.employee_id}
+            hover
+            onClick={() => onOpen(row)}
+            sx={{ cursor: 'pointer' }}
+          >
             <TableCell>
               <Typography variant="body2" fontWeight={600}>
                 {row.employee_name}
@@ -178,8 +195,15 @@ function EmployeeRows({
             <TableCell>
               <HoursCell row={row} />
             </TableCell>
-            <TableCell>
-              <ReminderCell row={row} onNotify={onNotify} mayNotify={mayNotify} busy={busy} />
+            {/* Reminding is not a request to open the timesheet. */}
+            <TableCell onClick={(event) => event.stopPropagation()}>
+              <ReminderCell
+                row={row}
+                onNotify={onNotify}
+                mayNotify={mayNotify}
+                sending={sendingId === row.employee_id}
+                sent={sentIds.has(row.employee_id)}
+              />
             </TableCell>
           </TableRow>
         ))}
@@ -198,7 +222,23 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<number | null>(null);
   const toggleProject = (id: number) => setExpanded((open) => (open === id ? null : id));
-  const [nudged, setNudged] = useState<Set<number>>(new Set());
+  // Reminded this session; merged below with what the server remembers.
+  const [sentHere, setSentHere] = useState<Set<number>>(new Set());
+  // Which button is sending right now - only that one greys out while it does
+  // ("p:<project>", "e:<employee>" or "all"). One shared busy flag used to
+  // disable every Notify on the page.
+  const [sending, setSending] = useState<string | null>(null);
+  const [sentProjects, setSentProjects] = useState<Set<number>>(new Set());
+  // The person whose timesheet is open in the details pop-up.
+  const [viewing, setViewing] = useState<SubmissionStatusRow | null>(null);
+  // A project's button is done once it was pressed, or once everyone it would
+  // remind has been reminded one by one.
+  const projectSent = (project: ProjectSubmissionRow) =>
+    sentProjects.has(project.project_id) ||
+    (project.pending_count > 0 &&
+      project.employees
+        .filter((row) => !row.submitted)
+        .every((row) => nudged.has(row.employee_id)));
 
   const byProject = useApiResource(
     useCallback(() => timesheetsApi.statusByProject(week), [week]),
@@ -209,13 +249,27 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
     [week, reloadKey],
   );
 
+  // Everyone reminded about this week: what the server has on record - so a
+  // reload keeps "Sent" - plus anything sent from this page since it loaded.
+  const nudged = useMemo(() => {
+    const ids = new Set(sentHere);
+    for (const row of byEmployee.data?.results ?? []) {
+      if (row.reminded_at) ids.add(row.employee_id);
+    }
+    for (const project of byProject.data?.results ?? []) {
+      for (const row of project.employees) if (row.reminded_at) ids.add(row.employee_id);
+    }
+    return ids;
+  }, [sentHere, byEmployee.data, byProject.data]);
+
   const notify = useApiAction(timesheetsApi.notify);
   const active = view === 0 ? byProject : byEmployee;
 
   const shiftWeek = (days: number) => {
     setWeek((current) => toIsoDate(addDays(fromIsoDate(current), days)));
     setExpanded(null);
-    setNudged(new Set());
+    setSentHere(new Set());
+    setSentProjects(new Set());
   };
 
   const announce = (count: number, who: string) => {
@@ -229,19 +283,19 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
     );
   };
 
-  const notifyEmployees = async (rows: SubmissionStatusRow[], who: string) => {
+  const notifyEmployees = async (rows: SubmissionStatusRow[], who: string, key: string) => {
     const pending = rows.filter((row) => !row.submitted);
     if (pending.length === 0) {
       announce(0, who);
       return;
     }
-    const result = await notify.run({
-      employee_ids: pending.map((row) => row.employee_id),
-      week,
-    });
+    setSending(key);
+    const result = await notify
+      .run({ employee_ids: pending.map((row) => row.employee_id), week })
+      .finally(() => setSending(null));
     if (result) {
       announce(result.count, who);
-      setNudged((prev) => new Set([...prev, ...pending.map((row) => row.employee_id)]));
+      setSentHere((prev) => new Set([...prev, ...pending.map((row) => row.employee_id)]));
     }
   };
 
@@ -250,10 +304,14 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
       announce(0, 'everyone on this project');
       return;
     }
-    const result = await notify.run({ project: project.project_id, week });
+    setSending(`p:${project.project_id}`);
+    const result = await notify
+      .run({ project: project.project_id, week })
+      .finally(() => setSending(null));
     if (result) {
       announce(result.count, 'everyone on this project');
-      setNudged(
+      setSentProjects((prev) => new Set([...prev, project.project_id]));
+      setSentHere(
         (prev) =>
           new Set([
             ...prev,
@@ -436,9 +494,16 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
                           startIcon={<NotificationsActiveIcon />}
                           sx={NOTIFY_BUTTON_SX}
                           onClick={() => void notifyProject(project)}
-                          disabled={!mayNotify || notify.busy || project.pending_count === 0}
+                          disabled={
+                            !mayNotify ||
+                            project.pending_count === 0 ||
+                            sending === `p:${project.project_id}` ||
+                            projectSent(project)
+                          }
                         >
-                          Notify {project.pending_count > 0 ? project.pending_count : ''}
+                          {projectSent(project)
+                            ? 'Sent'
+                            : `Notify ${project.pending_count > 0 ? project.pending_count : ''}`}
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -463,7 +528,12 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
                             <TableCell sx={SUBHEAD}>Reminder</TableCell>
                           </TableRow>
                           {project.employees.map((row) => (
-                            <TableRow key={row.employee_id} hover>
+                            <TableRow
+                              key={row.employee_id}
+                              hover
+                              onClick={() => setViewing(row)}
+                              sx={{ cursor: 'pointer' }}
+                            >
                               <TableCell />
                               <TableCell>
                                 <Typography variant="body2" fontWeight={600}>
@@ -481,14 +551,19 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
                               <TableCell>
                                 <HoursCell row={row} />
                               </TableCell>
-                              <TableCell>
+                              <TableCell onClick={(event) => event.stopPropagation()}>
                                 <ReminderCell
                                   row={row}
                                   onNotify={(person) =>
-                                    void notifyEmployees([person], person.employee_name)
+                                    void notifyEmployees(
+                                      [person],
+                                      person.employee_name,
+                                      `e:${person.employee_id}`,
+                                    )
                                   }
                                   mayNotify={mayNotify}
-                                  busy={notify.busy}
+                                  sending={sending === `e:${row.employee_id}`}
+                                  sent={nudged.has(row.employee_id)}
                                 />
                               </TableCell>
                             </TableRow>
@@ -531,11 +606,16 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
               startIcon={<NotificationsActiveIcon />}
               onClick={() =>
                 void notifyEmployees(
-                  filteredEmployees,
+                  filteredEmployees.filter((row) => !nudged.has(row.employee_id)),
                   search ? 'everyone matching this search' : 'everyone',
+                  'all',
                 )
               }
-              disabled={!mayNotify || notify.busy || pendingInView.length === 0}
+              disabled={
+                !mayNotify ||
+                sending === 'all' ||
+                pendingInView.every((row) => nudged.has(row.employee_id))
+              }
             >
               Notify all outstanding ({pendingInView.length})
             </Button>
@@ -554,9 +634,13 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
             <TableContainer sx={{ overflowX: 'auto' }}>
               <EmployeeRows
                 rows={filteredEmployees}
-                onNotify={(row) => void notifyEmployees([row], row.employee_name)}
+                onNotify={(row) =>
+                  void notifyEmployees([row], row.employee_name, `e:${row.employee_id}`)
+                }
                 mayNotify={mayNotify}
-                busy={notify.busy}
+                sendingId={sending?.startsWith('e:') ? Number(sending.slice(2)) : null}
+                sentIds={nudged}
+                onOpen={setViewing}
               />
             </TableContainer>
           )}
@@ -565,9 +649,18 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
 
       {nudged.size > 0 && (
         <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block' }}>
-          {nudged.size} reminder{nudged.size === 1 ? '' : 's'} sent for this week. Sending again
-          creates another notification.
+          {nudged.size} reminder{nudged.size === 1 ? '' : 's'} sent for this week.
         </Typography>
+      )}
+
+      {viewing && (
+        <TimesheetDetailsDialog
+          key={viewing.employee_id}
+          row={viewing}
+          weekStart={week}
+          weekEnd={toIsoDate(addDays(fromIsoDate(week), 6))}
+          onClose={() => setViewing(null)}
+        />
       )}
     </Box>
   );

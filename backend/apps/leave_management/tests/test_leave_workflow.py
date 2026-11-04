@@ -356,3 +356,207 @@ def test_a_request_that_starts_today_may_still_run_on(org, leave_type):
     )
 
     assert request.start_date == today
+
+
+# ---------------------------------------------------------------------------
+# Loss of Pay: unpaid, no allowance, deducted on the payslip
+# ---------------------------------------------------------------------------
+@pytest.mark.django_db
+def test_loss_of_pay_needs_no_balance(org, lop_leave_type, next_monday):
+    """LOP has 0 days a year; that must not stop anyone taking it."""
+    request = apply_for_leave(
+        org["employee"],
+        lop_leave_type,
+        next_monday,
+        next_monday + timedelta(days=2),
+        "Personal work, unpaid.",
+    )
+
+    assert request.total_days == Decimal("3.0")
+    balance = org["employee"].leave_balances.get(leave_type=lop_leave_type)
+    assert balance.pending_days == Decimal("3.0")
+
+
+@pytest.mark.django_db
+def test_loss_of_pay_is_approved_like_any_leave_and_counted_as_used(
+    org, lop_leave_type, next_monday
+):
+    request = apply_for_leave(
+        org["employee"], lop_leave_type, next_monday, next_monday + timedelta(days=1), "Unpaid."
+    )
+    assert request.status == LeaveStatus.PENDING_MANAGER  # still needs both approvals
+
+    approve_fully(request.pk, org["manager"], org["hr"])
+
+    balance = org["employee"].leave_balances.get(leave_type=lop_leave_type)
+    assert balance.used_days == Decimal("2.0")
+    assert balance.pending_days == Decimal("0.0")
+
+
+@pytest.mark.django_db
+def test_loss_of_pay_still_obeys_the_other_rules(org, lop_leave_type, leave_type, next_monday):
+    """Only the balance is waived: overlapping another request is still refused."""
+    apply_for_leave(org["employee"], leave_type, next_monday, next_monday, "Paid day.")
+
+    with pytest.raises(BusinessRuleViolation):
+        apply_for_leave(org["employee"], lop_leave_type, next_monday, next_monday, "Same day.")
+
+
+@pytest.mark.django_db
+def test_approved_loss_of_pay_reaches_payroll(org, lop_leave_type, next_monday):
+    """The payslip's unpaid-day count is what turns LOP into a salary deduction."""
+    from apps.payroll.services import unpaid_leave_days
+
+    request = apply_for_leave(
+        org["employee"], lop_leave_type, next_monday, next_monday, "One unpaid day."
+    )
+    approve_fully(request.pk, org["manager"], org["hr"])
+
+    assert unpaid_leave_days(org["employee"], next_monday.year, next_monday.month) == Decimal("1.0")
+
+
+# ---------------------------------------------------------------------------
+# Editing a request while it waits for the manager
+# ---------------------------------------------------------------------------
+EDIT_URL = "/api/v1/leaves/{}/edit/"
+
+
+def edit_payload(leave_type, start, end, reason="Changed plans, new dates."):
+    return {
+        "leave_type": leave_type.pk,
+        "start_date": str(start),
+        "end_date": str(end),
+        "day_part": "full",
+        "reason": reason,
+    }
+
+
+@pytest.mark.django_db
+def test_an_employee_edits_their_pending_request(auth_client, org, leave_type, next_monday):
+    request = apply_for_leave(org["employee"], leave_type, next_monday, next_monday, "One day.")
+
+    response = auth_client(org["employee"]).post(
+        EDIT_URL.format(request.pk),
+        edit_payload(leave_type, next_monday, next_monday + timedelta(days=2)),
+        format="json",
+    )
+
+    assert response.status_code == 200, response.data
+    assert response.data["total_days"] == "3.0"
+    balance = org["employee"].leave_balances.get(leave_type=leave_type)
+    # The reservation moved with it: 3 pending, not 1 + 3.
+    assert balance.pending_days == Decimal("3.0")
+
+
+@pytest.mark.django_db
+def test_changing_the_type_moves_the_reserved_days(
+    auth_client, org, leave_type, lop_leave_type, next_monday
+):
+    request = apply_for_leave(org["employee"], leave_type, next_monday, next_monday, "One day.")
+
+    auth_client(org["employee"]).post(
+        EDIT_URL.format(request.pk),
+        edit_payload(lop_leave_type, next_monday, next_monday),
+        format="json",
+    )
+
+    balances = {b.leave_type_id: b for b in org["employee"].leave_balances.all()}
+    assert balances[leave_type.pk].pending_days == Decimal("0.0")
+    assert balances[lop_leave_type.pk].pending_days == Decimal("1.0")
+
+
+@pytest.mark.django_db
+def test_the_edit_is_checked_like_a_new_request(auth_client, org, leave_type, next_monday):
+    request = apply_for_leave(org["employee"], leave_type, next_monday, next_monday, "One day.")
+
+    response = auth_client(org["employee"]).post(
+        EDIT_URL.format(request.pk),
+        edit_payload(leave_type, next_monday, next_monday + timedelta(days=40)),
+        format="json",
+    )
+
+    assert response.status_code in (400, 409, 422)
+    request.refresh_from_db()
+    assert request.total_days == Decimal("1.0")  # unchanged
+    balance = org["employee"].leave_balances.get(leave_type=leave_type)
+    assert balance.pending_days == Decimal("1.0")  # nothing lost or doubled
+
+
+@pytest.mark.django_db
+def test_a_request_the_manager_has_acted_on_cannot_be_edited(
+    auth_client, org, leave_type, next_monday
+):
+    request = apply_for_leave(org["employee"], leave_type, next_monday, next_monday, "One day.")
+    manager_approve(request.pk, org["manager"].user)
+
+    response = auth_client(org["employee"]).post(
+        EDIT_URL.format(request.pk),
+        edit_payload(leave_type, next_monday, next_monday + timedelta(days=1)),
+        format="json",
+    )
+
+    assert response.status_code in (400, 409)
+    request.refresh_from_db()
+    assert request.total_days == Decimal("1.0")
+
+
+@pytest.mark.django_db
+def test_only_the_applicant_can_edit(auth_client, org, leave_type, next_monday):
+    request = apply_for_leave(org["employee"], leave_type, next_monday, next_monday, "One day.")
+
+    response = auth_client(org["manager"]).post(
+        EDIT_URL.format(request.pk),
+        edit_payload(leave_type, next_monday, next_monday + timedelta(days=1)),
+        format="json",
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_the_manager_hears_about_the_change(auth_client, org, leave_type, next_monday):
+    request = apply_for_leave(org["employee"], leave_type, next_monday, next_monday, "One day.")
+    auth_client(org["employee"]).post(
+        EDIT_URL.format(request.pk),
+        edit_payload(leave_type, next_monday, next_monday + timedelta(days=1)),
+        format="json",
+    )
+
+    assert Notification.objects.filter(
+        recipient=org["manager"].user, title__startswith="Leave request updated"
+    ).exists()
+
+
+# ---------------------------------------------------------------------------
+# Loss of Pay with a yearly cap (60 days)
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def capped_lop(db):
+    from apps.leave_management.models import LeaveType
+
+    return LeaveType.objects.create(
+        code="LOP", name="Loss of Pay", days_per_year=Decimal("60.0"), is_paid=False
+    )
+
+
+@pytest.mark.django_db
+def test_capped_loss_of_pay_counts_down_from_its_allowance(org, capped_lop, next_monday):
+    apply_for_leave(
+        org["employee"], capped_lop, next_monday, next_monday + timedelta(days=4), "A week."
+    )
+
+    balance = org["employee"].leave_balances.get(leave_type=capped_lop)
+    assert balance.entitled_days == Decimal("60.0")
+    assert balance.available_days == Decimal("55.0")
+
+
+@pytest.mark.django_db
+def test_capped_loss_of_pay_refuses_beyond_the_cap(org, capped_lop, next_monday):
+    balance = get_or_create_balance(org["employee"], capped_lop, next_monday.year)
+    balance.used_days = Decimal("59.0")
+    balance.save()
+
+    with pytest.raises(BusinessRuleViolation, match="Insufficient"):
+        apply_for_leave(
+            org["employee"], capped_lop, next_monday, next_monday + timedelta(days=1), "Two."
+        )

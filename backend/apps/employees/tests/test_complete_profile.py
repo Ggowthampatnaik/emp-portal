@@ -9,9 +9,11 @@ The plan calls that a **hard** gate, and this file is mostly about the word
 every endpoint and tested by calling the API directly.
 """
 
+from datetime import date
+
 import pytest
 
-from apps.employees.models import MANDATORY_PROFILE_FIELDS, ExperienceDetail
+from apps.employees.models import MANDATORY_PROFILE_FIELDS, ExperienceDetail, latest_birth_date
 
 COMPLETE = "/api/v1/employees/{pk}/complete-profile/"
 
@@ -359,6 +361,150 @@ def test_a_past_date_of_birth_is_accepted(auth_client, newcomer):
     )
 
     assert response.status_code == 200, response.data
+
+
+@pytest.mark.django_db
+def test_someone_who_turns_18_today_is_accepted(auth_client, newcomer):
+    from django.utils import timezone
+
+    client = auth_client(newcomer)
+
+    response = client.post(
+        COMPLETE.format(pk=newcomer.pk),
+        {**FULL_PROFILE, "date_of_birth": latest_birth_date(timezone.localdate()).isoformat()},
+        format="json",
+    )
+
+    assert response.status_code == 200, response.data
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("days_short", [1, 365, 3650])
+def test_someone_under_18_is_refused(auth_client, newcomer, days_short):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    client = auth_client(newcomer)
+    too_young = latest_birth_date(timezone.localdate()) + timedelta(days=days_short)
+
+    response = client.post(
+        COMPLETE.format(pk=newcomer.pk),
+        {**FULL_PROFILE, "date_of_birth": too_young.isoformat()},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert "must be at least 18" in str(response.data)
+    newcomer.refresh_from_db()
+    assert newcomer.profile_completed is False
+
+
+@pytest.mark.django_db
+def test_a_future_date_gets_one_reason_not_two(auth_client, newcomer):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    client = auth_client(newcomer)
+    future = (timezone.localdate() + timedelta(days=1)).isoformat()
+
+    response = client.post(
+        COMPLETE.format(pk=newcomer.pk), {**FULL_PROFILE, "date_of_birth": future}, format="json"
+    )
+
+    assert "must be at least 18" not in str(response.data)
+
+
+@pytest.fixture
+def too_young() -> str:
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    return (latest_birth_date(timezone.localdate()) + timedelta(days=1)).isoformat()
+
+
+@pytest.mark.django_db
+def test_editing_your_own_profile_is_no_way_round_it(auth_client, org, too_young):
+    response = auth_client(org["employee"]).patch(
+        f"/api/v1/employees/{org['employee'].pk}/", {"date_of_birth": too_young}, format="json"
+    )
+
+    assert response.status_code == 400, response.data
+    assert "must be at least 18" in str(response.data)
+
+
+@pytest.mark.django_db
+def test_an_admin_editing_someone_else_is_held_to_it(auth_client, org, too_young):
+    response = auth_client(org["admin"]).patch(
+        f"/api/v1/employees/{org['employee'].pk}/", {"date_of_birth": too_young}, format="json"
+    )
+
+    assert response.status_code == 400, response.data
+    assert "must be at least 18" in str(response.data)
+
+
+@pytest.mark.django_db
+def test_saving_a_draft_is_held_to_it_too(auth_client, newcomer, too_young):
+    """Otherwise the wizard could park a date its final submit would refuse."""
+    response = auth_client(newcomer).post(
+        f"/api/v1/employees/{newcomer.pk}/profile-draft/",
+        {"date_of_birth": too_young},
+        format="json",
+    )
+
+    assert response.status_code == 400, response.data
+    assert "must be at least 18" in str(response.data)
+
+
+@pytest.mark.django_db
+def test_adding_an_employee_is_held_to_it_too(auth_client, org, department, too_young):
+    response = auth_client(org["admin"]).post(
+        "/api/v1/employees/",
+        {
+            "employee_code": "TRG0999",
+            "email": "too.young@trigyan.io",
+            "first_name": "Too",
+            "last_name": "Young",
+            "temporary_password": "Welcome@2026",
+            "date_of_joining": "2026-11-04",
+            "date_of_birth": too_young,
+            "roles": ["employee"],
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400, response.data
+    assert "must be at least 18" in str(response.data)
+
+
+@pytest.mark.django_db
+def test_an_old_record_can_still_change_other_fields(auth_client, org, too_young):
+    """Only a date being written is checked, so a record entered before this
+    rule existed is not frozen until someone corrects it."""
+    from apps.employees.models import Employee
+
+    Employee.objects.filter(pk=org["employee"].pk).update(date_of_birth=too_young)
+
+    response = auth_client(org["employee"]).patch(
+        f"/api/v1/employees/{org['employee'].pk}/", {"blood_group": "O+"}, format="json"
+    )
+
+    assert response.status_code == 200, response.data
+
+
+@pytest.mark.parametrize(
+    ("today", "latest"),
+    [
+        (date(2026, 11, 4), date(2008, 11, 4)),
+        (date(2028, 2, 29), date(2010, 2, 28)),
+        (date(2026, 2, 28), date(2008, 2, 28)),
+    ],
+)
+def test_the_latest_birth_date(today, latest):
+    """29 February has no twin 18 years earlier, and must not crash looking."""
+    assert latest_birth_date(today) == latest
 
 
 @pytest.mark.django_db

@@ -58,6 +58,7 @@ export default function BankDetailsCard({
   employeeName,
   isOwner,
   canManage,
+  readOnly = false,
 }: {
   employeeId: number;
   employeeName: string;
@@ -65,6 +66,11 @@ export default function BankDetailsCard({
   isOwner: boolean;
   /** Holds `bank.manage` — HR. */
   canManage: boolean;
+  /**
+   * May read the card but not change it. `canManage` alone cannot say this: it
+   * also decides whether the card shows at all.
+   */
+  readOnly?: boolean;
 }) {
   const dispatch = useAppDispatch();
   const mayTouch = isOwner || canManage;
@@ -142,7 +148,7 @@ export default function BankDetailsCard({
       icon={<AccountBalanceIcon color="primary" />}
       subtitle="Where salary is paid."
       action={
-        !editing ? (
+        !editing && !readOnly ? (
           <Button size="small" startIcon={<EditIcon />} onClick={startEditing}>
             {missing ? 'Add' : 'Edit'}
           </Button>

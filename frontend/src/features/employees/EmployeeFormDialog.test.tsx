@@ -1,4 +1,7 @@
-/** Add employee: the temporary password is held to the portal's password rule. */
+/**
+ * Add employee: the temporary password is held to the portal's password rule,
+ * and the phone number to the same per-country rules as everywhere else.
+ */
 
 import { Provider } from 'react-redux';
 import { render, screen, waitFor } from '@testing-library/react';
@@ -40,6 +43,83 @@ async function fillTheRest(user: ReturnType<typeof userEvent.setup>) {
 beforeEach(() => {
   vi.clearAllMocks();
   create.mockResolvedValue({ id: 99, full_name: 'New Joiner' });
+});
+
+const phoneField = () => screen.getByLabelText(/^Phone/);
+
+describe('EmployeeFormDialog, phone number', () => {
+  async function fillAll(user: ReturnType<typeof userEvent.setup>) {
+    await fillTheRest(user);
+    await user.type(passwordField(), 'Welcome@2026');
+  }
+
+  it('starts on India, with the country code in its own box', () => {
+    renderForm();
+
+    expect(screen.getByRole('combobox', { name: /country code/i })).toHaveValue('+91');
+  });
+
+  it('takes nothing but digits, spaces and dashes', async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    await user.type(phoneField(), 'fhgfhg98765-43210xyz');
+
+    expect(phoneField()).toHaveValue('98765-43210');
+  });
+
+  it('will not create the employee with an invalid number', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await fillAll(user);
+    await user.type(phoneField(), '12345');
+
+    await user.click(screen.getByRole('button', { name: 'Create employee' }));
+
+    expect(create).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(
+        'Enter a valid 10-digit Indian mobile number, starting with 6, 7, 8 or 9.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('sends a valid number with its country code', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await fillAll(user);
+    await user.type(phoneField(), '98765 43210');
+
+    await user.click(screen.getByRole('button', { name: 'Create employee' }));
+
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0][0]).toMatchObject({ phone: '+919876543210' });
+  });
+
+  it('checks the number against the country that was picked', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await fillAll(user);
+
+    await user.click(screen.getByRole('combobox', { name: /country code/i }));
+    await user.keyboard('United Kingdom{Enter}');
+    await user.type(phoneField(), '7400 123456');
+    await user.click(screen.getByRole('button', { name: 'Create employee' }));
+
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0][0]).toMatchObject({ phone: '+447400123456' });
+  });
+
+  it('leaves the phone out when none is given', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await fillAll(user);
+
+    await user.click(screen.getByRole('button', { name: 'Create employee' }));
+
+    await waitFor(() => expect(create).toHaveBeenCalled());
+    expect(create.mock.calls[0][0]).not.toHaveProperty('phone');
+  });
 });
 
 describe('EmployeeFormDialog, temporary password', () => {

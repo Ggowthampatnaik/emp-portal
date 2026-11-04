@@ -47,6 +47,52 @@ beforeEach(() => {
   myBalances.mockResolvedValue([balance()]);
 });
 
+describe('LeaveBalancesTab, Loss of Pay', () => {
+  it('counts the unpaid days taken instead of an allowance', async () => {
+    myBalances.mockResolvedValue([
+      balance({
+        leave_type_code: 'LOP',
+        leave_type_name: 'Loss of Pay',
+        leave_type_is_paid: false,
+        allocated_days: '0.0',
+        entitled_days: '0.0',
+        used_days: '2.0',
+        pending_days: '1.0',
+        available_days: '-3.0',
+      }),
+    ]);
+    render(<LeaveBalancesTab reloadKey={0} />);
+
+    expect(await screen.findByText('unpaid days taken')).toBeInTheDocument();
+    expect(screen.getByText(/deducted from that month's salary/)).toBeInTheDocument();
+    expect(screen.queryByText(/days available/)).not.toBeInTheDocument();
+    expect(screen.queryByText('-3.0')).not.toBeInTheDocument();
+  });
+});
+
+describe('LeaveBalancesTab, Loss of Pay with a 60-day allowance', () => {
+  it('shows the days still available and says they are unpaid', async () => {
+    myBalances.mockResolvedValue([
+      balance({
+        leave_type_code: 'LOP',
+        leave_type_name: 'Loss of Pay',
+        leave_type_is_paid: false,
+        allocated_days: '60.0',
+        entitled_days: '60.0',
+        used_days: '2.0',
+        pending_days: '1.0',
+        available_days: '57.0',
+      }),
+    ]);
+    render(<LeaveBalancesTab reloadKey={0} />);
+
+    expect(await screen.findByText('57.0')).toBeInTheDocument();
+    expect(screen.getByText('of 60.0 days available')).toBeInTheDocument();
+    expect(screen.getByText(/Unpaid — each day is deducted/)).toBeInTheDocument();
+    expect(screen.queryByText('unpaid days taken')).not.toBeInTheDocument();
+  });
+});
+
 describe('LeaveBalancesTab', () => {
   it('opens on the current year', async () => {
     render(<LeaveBalancesTab reloadKey={0} />);

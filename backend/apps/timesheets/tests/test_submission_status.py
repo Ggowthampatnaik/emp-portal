@@ -327,3 +327,65 @@ def test_the_counts_still_need_view_all(auth_client, org):
         "/api/v1/timesheets/status/by-employee/", {"counts_only": "true"}
     )
     assert response.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Reminders are remembered, so the board can show "Sent" after a reload
+# ---------------------------------------------------------------------------
+def _row(rows, employee):
+    return next(row for row in rows if row["employee_id"] == employee.pk)
+
+
+@pytest.mark.django_db
+def test_a_reminder_is_remembered_for_that_week(org, team, past_week):
+    from apps.timesheets.models import TimesheetReminder
+
+    notify_missing_timesheets(past_week, [org["employee"].pk], org["hr"].user)
+
+    assert TimesheetReminder.objects.filter(
+        employee=org["employee"], week_start_date=past_week, sent_by=org["hr"].user
+    ).exists()
+    rows = submission_status_by_employee(past_week)
+    assert _row(rows, org["employee"])["reminded_at"] is not None
+    assert _row(rows, org["peer"])["reminded_at"] is None
+
+
+@pytest.mark.django_db
+def test_the_board_carries_it_after_a_reload(auth_client, org, team, past_week):
+    client = auth_client(org["hr"])
+    client.post(NOTIFY, {"project": team.pk, "week": past_week.isoformat()})
+
+    # A fresh request, as after reloading the page.
+    by_project = client.get(BY_PROJECT, {"week": past_week.isoformat()})
+    project_row = next(r for r in by_project.data["results"] if r["project_id"] == team.pk)
+    assert all(e["reminded_at"] for e in project_row["employees"] if not e["submitted"])
+
+    by_employee = client.get(BY_EMPLOYEE, {"week": past_week.isoformat()})
+    assert _row(by_employee.data["results"], org["employee"])["reminded_at"] is not None
+
+
+@pytest.mark.django_db
+def test_sending_again_keeps_one_record(org, team, past_week):
+    from apps.timesheets.models import TimesheetReminder
+
+    notify_missing_timesheets(past_week, [org["employee"].pk], org["hr"].user)
+    notify_missing_timesheets(past_week, [org["employee"].pk], org["hr"].user)
+
+    assert TimesheetReminder.objects.filter(employee=org["employee"]).count() == 1
+
+
+@pytest.mark.django_db
+def test_a_reminder_belongs_to_its_own_week(org, team, past_week):
+    notify_missing_timesheets(past_week, [org["employee"].pk], org["hr"].user)
+
+    earlier = submission_status_by_employee(past_week - timedelta(days=7))
+    assert _row(earlier, org["employee"])["reminded_at"] is None
+
+
+@pytest.mark.django_db
+def test_someone_who_already_submitted_is_not_recorded_as_reminded(org, team, past_week):
+    file_timesheet(org["employee"], team, past_week)
+
+    notify_missing_timesheets(past_week, [org["employee"].pk], org["hr"].user)
+
+    assert _row(submission_status_by_employee(past_week), org["employee"])["reminded_at"] is None

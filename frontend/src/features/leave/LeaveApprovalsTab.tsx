@@ -85,6 +85,39 @@ function BalanceCell({ row }: { row: LeaveQueueRow }) {
   );
 }
 
+/**
+ * Column widths per queue. Shares of the width so the gaps come out even. For
+ * the manager, Reason takes what is left (long reasons show more before the
+ * ellipsis) and Decision is only as wide as Approve + Reject.
+ *
+ * HR has no Reason column - it is in the dialog either decision opens - so
+ * Decision takes what is left instead, and the shares have to leave it the
+ * 325px that Approve + Send Back To Manager need at `table`, the narrowest the
+ * table goes. That width is what fits beside the sidebar on a 1366px laptop.
+ */
+const COLS = {
+  manager: {
+    employee: '17%',
+    type: '14%',
+    date: '12%',
+    days: '8%',
+    balance: '10%',
+    manager: '0',
+    decision: 230,
+    table: 1150,
+  },
+  hr: {
+    employee: '14%',
+    type: '9.5%',
+    date: '9.5%',
+    days: '5.5%',
+    balance: '10%',
+    manager: '10%',
+    decision: 'auto',
+    table: 1040,
+  },
+} as const;
+
 export default function LeaveApprovalsTab({
   reloadKey,
   onChanged,
@@ -181,18 +214,20 @@ export default function LeaveApprovalsTab({
       )}
 
       <TableContainer sx={{ overflowX: 'auto' }}>
-        <Table size="small">
+        {/* Fixed shares of the width, everything reading from the left;
+            whatever has no share takes what is left. */}
+        <Table size="small" sx={{ tableLayout: 'fixed', minWidth: COLS[stage].table }}>
           <TableHead>
             <TableRow>
-              <TableCell>Employee</TableCell>
-              <TableCell>Type</TableCell>
-              <TableCell>From</TableCell>
-              <TableCell>To</TableCell>
-              <TableCell align="right">Days</TableCell>
-              <TableCell align="center">Balance</TableCell>
-              {stage === 'hr' && <TableCell>Manager</TableCell>}
-              <TableCell>Reason</TableCell>
-              <TableCell>Decision</TableCell>
+              <TableCell sx={{ width: COLS[stage].employee }}>Employee</TableCell>
+              <TableCell sx={{ width: COLS[stage].type }}>Type</TableCell>
+              <TableCell sx={{ width: COLS[stage].date }}>From</TableCell>
+              <TableCell sx={{ width: COLS[stage].date }}>To</TableCell>
+              <TableCell sx={{ width: COLS[stage].days }}>Days</TableCell>
+              <TableCell sx={{ width: COLS[stage].balance }}>Balance</TableCell>
+              {stage === 'hr' && <TableCell sx={{ width: COLS.hr.manager }}>Manager</TableCell>}
+              {stage === 'manager' && <TableCell>Reason</TableCell>}
+              <TableCell sx={{ width: COLS[stage].decision }}>Decision</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -210,8 +245,8 @@ export default function LeaveApprovalsTab({
                 <TableCell>{row.leave_type_name}</TableCell>
                 <TableCell>{formatDate(row.start_date)}</TableCell>
                 <TableCell>{formatDate(row.end_date)}</TableCell>
-                <TableCell align="right">{row.total_days}</TableCell>
-                <TableCell align="center">
+                <TableCell>{row.total_days}</TableCell>
+                <TableCell>
                   <BalanceCell row={row} />
                 </TableCell>
                 {stage === 'hr' && (
@@ -226,18 +261,19 @@ export default function LeaveApprovalsTab({
                         noWrap
                         display="block"
                         title={row.manager_comment}
-                        sx={{ maxWidth: 160 }}
                       >
                         {row.manager_comment}
                       </Typography>
                     )}
                   </TableCell>
                 )}
-                <TableCell sx={{ maxWidth: 240 }}>
-                  <Typography variant="body2" noWrap title={row.reason}>
-                    {row.reason}
-                  </Typography>
-                </TableCell>
+                {stage === 'manager' && (
+                  <TableCell>
+                    <Typography variant="body2" noWrap title={row.reason}>
+                      {row.reason}
+                    </Typography>
+                  </TableCell>
+                )}
                 <TableCell>
                   <Stack direction="row" spacing={1}>
                     <Button

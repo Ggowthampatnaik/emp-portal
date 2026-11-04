@@ -44,6 +44,7 @@ import {
   addDays,
   formatDateRange,
   formatDateShort,
+  fromIsoDate,
   mondayOf,
   toIsoDate,
   toIsoDate as isoDate,
@@ -65,9 +66,18 @@ type OpenNote = {
   day: string;
 };
 
-export default function WeeklyGrid({ onChanged }: { onChanged: () => void }) {
+export default function WeeklyGrid({
+  onChanged,
+  initialWeek,
+}: {
+  onChanged: () => void;
+  /** Monday (YYYY-MM-DD) to open on - a week picked from My timesheets. */
+  initialWeek?: string | null;
+}) {
   const dispatch = useAppDispatch();
-  const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
+  const [weekStart, setWeekStart] = useState(() =>
+    initialWeek ? mondayOf(fromIsoDate(initialWeek)) : mondayOf(new Date()),
+  );
   const [cells, setCells] = useState<CellMap>({});
   const [notes, setNotes] = useState<CellMap>({});
   const [dirty, setDirty] = useState(false);

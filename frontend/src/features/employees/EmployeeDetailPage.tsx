@@ -1,7 +1,8 @@
 /**
  * Employee profile. Doubles as "My profile" - when no id is in the route it
- * loads /employees/me/. What is editable depends on the caller: HR/Admin may
- * change employment fields, an employee only their own contact details.
+ * loads /employees/me/. What is editable depends on the caller: Admin may
+ * change employment fields, an employee only their own contact details, and HR
+ * only the reporting line on anyone else's record.
  */
 
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -44,7 +45,7 @@ import SkillsCard from '@/features/employees/SkillsCard';
 import { employeesApi } from '@/services/api/services';
 import { ROLES } from '@/types/auth';
 import { BLOOD_GROUPS, type EmployeeDetail } from '@/types/domain';
-import { formatDate, todayIso } from '@/utils/date';
+import { birthDateProblem, formatDate, latestBirthDateIso } from '@/utils/date';
 import { formatPhone, phoneProblem } from '@/utils/phone';
 
 const SELF_FIELDS = [
@@ -106,7 +107,6 @@ export default function EmployeeDetailPage({ self = false }: { self?: boolean })
 
   const isOwnRecord = Boolean(data && user && data.email === user.email);
   const canEditAll = can('employee.edit');
-  const canEdit = canEditAll || isOwnRecord;
   /**
    * How much of a record an oversight module shows.
    *
@@ -127,6 +127,13 @@ export default function EmployeeDetailPage({ self = false }: { self?: boolean })
    * theirs does not.
    */
   const showAssets = !oversightOnly || !isSuperAdmin;
+  /**
+   * HR reads the whole of someone else's record but changes only who they
+   * report to and who reports to them - `canEditAll` still drives those two
+   * fields. Their own record is a person looking at their own data, as above.
+   */
+  const hrViewOnly = !isOwnRecord && !oversightOnly && roles.includes(ROLES.HR);
+  const canEdit = (canEditAll || isOwnRecord) && !hrViewOnly;
 
   const departments = useApiResource(
     useCallback(
@@ -147,16 +154,14 @@ export default function EmployeeDetailPage({ self = false }: { self?: boolean })
   const set = (field: keyof EmployeeDetail) => (event: { target: { value: string } }) =>
     setForm((prev) => ({ ...prev, [field]: event.target.value }));
 
-  // `max` stops the calendar offering a future day, but a date can still be
-  // typed in - so say so at once and hold Save, as the profile wizard does.
-  const today = todayIso();
-  const birthInFuture = Boolean(form.date_of_birth && form.date_of_birth > today);
+  // Said at once, with Save held, as the profile wizard does.
+  const birthProblem = birthDateProblem(form.date_of_birth);
   // Each phone box says what is wrong under itself; this only holds Save.
   const phoneInvalid = Boolean(
     phoneProblem(form.phone ?? '', true) ||
     phoneProblem(form.emergency_contact_phone ?? '', false),
   );
-  const cannotSave = birthInFuture || (editing && phoneInvalid);
+  const cannotSave = Boolean(birthProblem) || (editing && phoneInvalid);
 
   const handleSave = async () => {
     if (!data || cannotSave) return;
@@ -430,13 +435,13 @@ export default function EmployeeDetailPage({ self = false }: { self?: boolean })
                   value={form.date_of_birth ?? ''}
                   onChange={set('date_of_birth')}
                   size="small"
-                  error={Boolean(update.fieldErrors.date_of_birth) || birthInFuture}
-                  helperText={
-                    update.fieldErrors.date_of_birth ??
-                    (birthInFuture ? 'Date of birth cannot be in the future.' : ' ')
-                  }
-                  // The calendar stops at today; a typed future date is caught above.
-                  slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: today } }}
+                  error={Boolean(update.fieldErrors.date_of_birth) || Boolean(birthProblem)}
+                  helperText={update.fieldErrors.date_of_birth ?? birthProblem ?? ' '}
+                  // The calendar stops there; a typed date is caught above.
+                  slotProps={{
+                    inputLabel: { shrink: true },
+                    htmlInput: { max: latestBirthDateIso() },
+                  }}
                 />
                 <TextField
                   select
@@ -539,7 +544,9 @@ export default function EmployeeDetailPage({ self = false }: { self?: boolean })
         )}
 
         {/* Kept for Admin, whose job this is, and dropped for Super Admin. */}
-        {showAssets && <AssetsCard employeeId={data.id} canManage={can('asset.manage')} />}
+        {showAssets && (
+          <AssetsCard employeeId={data.id} canManage={can('asset.manage') && !hrViewOnly} />
+        )}
 
         {showPersonalRecords && (
           <BankDetailsCard
@@ -547,6 +554,7 @@ export default function EmployeeDetailPage({ self = false }: { self?: boolean })
             employeeName={data.full_name}
             isOwner={isOwnRecord}
             canManage={can('bank.manage')}
+            readOnly={hrViewOnly}
           />
         )}
 

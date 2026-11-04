@@ -85,11 +85,7 @@ function Stage({
 
 export default function LeaveStageTimeline({ request }: { request: LeaveRequest }) {
   return (
-    <Stack
-      direction={{ xs: 'column', sm: 'row' }}
-      spacing={2}
-      sx={{ py: 1 }}
-    >
+    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ py: 1 }}>
       <Stage
         label="1 · Reporting manager"
         status={request.manager_status}

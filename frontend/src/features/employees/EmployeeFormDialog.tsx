@@ -1,6 +1,7 @@
 /** Onboarding dialog: creates the portal account and the employment record. */
 
 import Alert from '@mui/material/Alert';
+import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
@@ -12,12 +13,14 @@ import Typography from '@mui/material/Typography';
 import { useCallback, useState } from 'react';
 
 import { useAppDispatch } from '@/app/hooks';
+import PhoneNumberInput from '@/components/common/PhoneNumberInput';
 import { showToast } from '@/features/ui/uiSlice';
 import { useApiAction, useApiResource } from '@/hooks/useApiResource';
 import { employeesApi } from '@/services/api/services';
 import { ROLES, type RoleSlug } from '@/types/auth';
 import { todayIso } from '@/utils/date';
 import { describeMissing, meetsPasswordRules, PASSWORD_HINT } from '@/utils/passwordRules';
+import { phoneProblem } from '@/utils/phone';
 import ClosableDialogTitle from '@/components/common/ClosableDialogTitle';
 
 interface Props {
@@ -84,9 +87,9 @@ export default function EmployeeFormDialog({ open, onClose, onSaved }: Props) {
 
   const handleSubmit = async () => {
     setTried(true);
-    // A weak password is refused by the server too; stopping here just saves
-    // the round trip and keeps the message beside the field.
-    if (!meetsPasswordRules(password)) return;
+    // A weak password or a bad number is refused by the server too; stopping
+    // here just saves the round trip and keeps the message beside the field.
+    if (!meetsPasswordRules(password) || phoneProblem(form.phone, true)) return;
 
     const payload: Record<string, unknown> = {
       ...form,
@@ -269,13 +272,16 @@ export default function EmployeeFormDialog({ open, onClose, onSaved }: Props) {
               fullWidth
               {...fieldProps('work_location')}
             />
-            <TextField
-              label="Phone"
-              value={form.phone}
-              onChange={set('phone')}
-              fullWidth
-              {...fieldProps('phone')}
-            />
+            <Box sx={{ width: '100%' }}>
+              <PhoneNumberInput
+                label="Phone"
+                value={form.phone}
+                onChange={(phone) => setForm((prev) => ({ ...prev, phone }))}
+                mobile
+                serverError={action.fieldErrors.phone}
+                helperText="Mobile number, without the country code."
+              />
+            </Box>
           </Stack>
         </Stack>
       </DialogContent>

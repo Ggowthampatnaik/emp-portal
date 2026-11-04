@@ -270,6 +270,8 @@ export interface LeaveBalance {
   leave_type: number;
   leave_type_code: string;
   leave_type_name: string;
+  /** False for Loss of Pay: no allowance, each day deducted from salary. */
+  leave_type_is_paid?: boolean;
   year: number;
   allocated_days: string;
   carried_forward_days: string;
@@ -326,6 +328,8 @@ export interface LeaveRequest {
   approvals: LeaveApprovalEntry[];
   cc_recipients: LeaveCCRecipient[];
   can_cancel: boolean;
+  /** Still with the reporting manager, so the applicant may change it. */
+  can_edit?: boolean;
 }
 
 export interface LeaveCCRecipient {
@@ -608,6 +612,8 @@ export interface SubmissionStatusRow {
   total_hours: string | null;
   /** True once it has left the employee's hands - pending or approved. */
   submitted: boolean;
+  /** When they were last reminded about this week, or null. */
+  reminded_at?: string | null;
 }
 
 export interface ProjectSubmissionRow {

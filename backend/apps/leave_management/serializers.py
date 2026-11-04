@@ -58,6 +58,11 @@ class HolidaySerializer(serializers.ModelSerializer):
 class LeaveBalanceSerializer(serializers.ModelSerializer):
     leave_type_name = serializers.CharField(source="leave_type.name", read_only=True)
     leave_type_code = serializers.CharField(source="leave_type.code", read_only=True)
+    leave_type_is_paid = serializers.BooleanField(
+        source="leave_type.is_paid",
+        read_only=True,
+        help_text="False for Loss of Pay: no allowance, deducted from salary.",
+    )
     employee_name = serializers.CharField(source="employee.full_name", read_only=True)
     entitled_days = serializers.DecimalField(max_digits=6, decimal_places=1, read_only=True)
     available_days = serializers.DecimalField(max_digits=6, decimal_places=1, read_only=True)
@@ -71,6 +76,7 @@ class LeaveBalanceSerializer(serializers.ModelSerializer):
             "leave_type",
             "leave_type_code",
             "leave_type_name",
+            "leave_type_is_paid",
             "year",
             "allocated_days",
             "carried_forward_days",
@@ -122,6 +128,7 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
     approvals = LeaveApprovalSerializer(many=True, read_only=True)
     cc_recipients = LeaveRequestCCSerializer(many=True, read_only=True)
     can_cancel = serializers.SerializerMethodField()
+    can_edit = serializers.SerializerMethodField()
     manager_decided_by_name = serializers.CharField(
         source="manager_decided_by.full_name", read_only=True, default=None
     )
@@ -163,6 +170,7 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
             "approvals",
             "cc_recipients",
             "can_cancel",
+            "can_edit",
         )
         read_only_fields = fields
 
@@ -175,6 +183,12 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
         if obj.status == LeaveStatus.PENDING_HR:
             return "hr"
         return "closed"
+
+    def get_can_edit(self, obj: LeaveRequest) -> bool:
+        """Still with the manager: nobody has acted on it yet."""
+        from common.enums import LeaveStatus
+
+        return obj.status == LeaveStatus.PENDING_MANAGER
 
     def get_can_cancel(self, obj: LeaveRequest) -> bool:
         from django.utils import timezone

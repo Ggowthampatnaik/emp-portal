@@ -49,7 +49,7 @@ import {
   toAddress,
   type AddressDetail,
 } from '@/utils/address';
-import { todayIso } from '@/utils/date';
+import { birthDateProblem, latestBirthDateIso } from '@/utils/date';
 import { phoneProblem } from '@/utils/phone';
 
 /** The employee's own number must be a mobile; an emergency contact's need not. */
@@ -178,10 +178,7 @@ export default function CompleteProfilePage() {
   const set = (field: Field) => (event: { target: { value: string } }) =>
     setForm((current) => ({ ...current, [field]: event.target.value }));
 
-  // ISO dates compare correctly as strings. `max` stops the calendar offering
-  // a future day, but a date can still be typed in - hence the check too.
-  const today = todayIso();
-  const birthInFuture = form.date_of_birth > today;
+  const birthProblem = birthDateProblem(form.date_of_birth);
 
   const stepIsComplete = (index: number) =>
     STEPS[index]!.addresses
@@ -190,7 +187,7 @@ export default function CompleteProfilePage() {
           (field) =>
             form[field].trim().length > 0 &&
             !(isPhoneField(field) && phoneProblem(form[field], PHONE_FIELDS[field])) &&
-            !(field === 'date_of_birth' && birthInFuture),
+            !(field === 'date_of_birth' && birthProblem),
         );
 
   const handleFinish = async () => {
@@ -366,12 +363,12 @@ export default function CompleteProfilePage() {
                     key={field}
                     type="date"
                     {...shared}
-                    error={shared.error || birthInFuture}
-                    helperText={
-                      save.fieldErrors[field] ??
-                      (birthInFuture ? 'Date of birth cannot be in the future.' : ' ')
-                    }
-                    slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: today } }}
+                    error={shared.error || Boolean(birthProblem)}
+                    helperText={save.fieldErrors[field] ?? birthProblem ?? ' '}
+                    slotProps={{
+                      inputLabel: { shrink: true },
+                      htmlInput: { max: latestBirthDateIso() },
+                    }}
                   />
                 );
               }

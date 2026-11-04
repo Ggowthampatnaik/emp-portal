@@ -19,6 +19,7 @@ const TYPES = [
   { id: 1, code: 'EL', name: 'Earned Leave' },
   { id: 2, code: 'SL', name: 'Sick Leave' },
   { id: 3, code: 'MAT', name: 'Maternity Leave' },
+  { id: 4, code: 'LOP', name: 'Loss of Pay' },
 ];
 
 function balance(leaveType: number, code: string) {
@@ -83,6 +84,46 @@ describe('ApplyLeaveDialog leave types', () => {
 
     expect(options.some((text) => text.includes('Earned Leave'))).toBe(true);
     expect(options.some((text) => text.includes('Maternity Leave'))).toBe(false);
+  });
+
+  it('offers Loss of Pay as unpaid, not as zero days available', async () => {
+    myBalances.mockResolvedValue([
+      balance(1, 'EL'),
+      {
+        ...balance(4, 'LOP'),
+        leave_type_is_paid: false,
+        allocated_days: '0.0',
+        entitled_days: '0.0',
+        available_days: '0.0',
+      },
+    ]);
+
+    renderDialog();
+    const options = await openedTypeOptions();
+    const lop = options.find((text) => text.includes('Loss of Pay')) ?? '';
+
+    expect(lop).toContain('unpaid, deducted from salary');
+    expect(lop).not.toContain('available');
+  });
+
+  it('offers capped Loss of Pay with the days left, marked unpaid', async () => {
+    myBalances.mockResolvedValue([
+      balance(1, 'EL'),
+      {
+        ...balance(4, 'LOP'),
+        leave_type_is_paid: false,
+        allocated_days: '60.0',
+        entitled_days: '60.0',
+        available_days: '58.0',
+      },
+    ]);
+
+    renderDialog();
+    const options = await openedTypeOptions();
+    const lop = options.find((text) => text.includes('Loss of Pay')) ?? '';
+
+    expect(lop).toContain('58.0 day(s) available');
+    expect(lop).toContain('unpaid');
   });
 
   it('offers the type to somebody who holds the balance', async () => {

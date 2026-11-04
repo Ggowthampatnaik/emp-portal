@@ -112,13 +112,13 @@ def _field(name):
 # ---------------------------------------------------------------------------
 # The view, as the router would reach it
 # ---------------------------------------------------------------------------
-def media_routes():
-    """The url table as it is built with DEBUG on, where media is routed."""
+def media_routes(**settings):
+    """The url table as it is built with DEBUG on, unless told otherwise."""
     import importlib
 
     import config.urls
 
-    with override_settings(DEBUG=True):
+    with override_settings(**(settings or {"DEBUG": True})):
         clear_url_caches()
         patterns = list(importlib.reload(config.urls).urlpatterns)
     clear_url_caches()
@@ -144,6 +144,26 @@ def test_the_file_is_served_to_a_signed_link(stored_file):
 
 
 @pytest.mark.django_db
+def test_a_server_holding_its_own_uploads_routes_them_with_debug_off(stored_file):
+    """Hostinger: DEBUG off, files on local disk. The route used to hang off
+    DEBUG alone, so every photo and document 404ed on the real server."""
+    patterns = media_routes(DEBUG=False, MEDIA_SIGNING=True)
+
+    response = fetch(patterns, stored_file, sign_media_path(stored_file))
+
+    assert response.status_code == 200
+    assert b"certificate" in b"".join(response.streaming_content)
+
+
+def test_azure_serves_its_own_files_so_nothing_is_routed():
+    """Blob Storage hands out SAS links, so Django must not answer for /media/."""
+    patterns = media_routes(DEBUG=False, MEDIA_SIGNING=False)
+
+    with pytest.raises(Resolver404):
+        fetch(patterns, PATH)
+
+
+@pytest.mark.django_db
 def test_a_guessed_path_alone_opens_nothing(stored_file):
     from django.http import Http404
 
@@ -158,17 +178,3 @@ def test_a_signature_for_a_file_that_is_gone_is_still_a_404():
 
     with pytest.raises(Http404):
         fetch(media_routes(), PATH, sign_media_path(PATH))
-
-
-def test_media_is_not_routed_at_all_without_debug():
-    """Production serves uploads from Blob Storage; Django serves none of it."""
-    import importlib
-
-    import config.urls
-
-    clear_url_caches()
-    patterns = list(importlib.reload(config.urls).urlpatterns)
-    resolver = URLResolver(RegexPattern(r"^/"), patterns)
-
-    with pytest.raises(Resolver404):
-        resolver.resolve(f"/media/{PATH}")

@@ -8,10 +8,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   addDays,
+  birthDateProblem,
   formatDate,
   formatDateRange,
   formatDateShort,
   formatDateTime,
+  latestBirthDateIso,
   fromIsoDate,
   mondayOf,
   toIsoDate,
@@ -147,5 +149,40 @@ describe('formatDateRange', () => {
 
   it('states both years when the range crosses one', () => {
     expect(formatDateRange('2026-12-28', '2027-01-03')).toBe('28 Dec 2026 → 3 Jan 2027');
+  });
+});
+
+describe('latestBirthDateIso', () => {
+  it('is the same day, eighteen years back', () => {
+    expect(latestBirthDateIso(new Date(2026, 10, 4))).toBe('2008-11-04');
+  });
+
+  it('falls back to the 28th when 29 February has no twin', () => {
+    expect(latestBirthDateIso(new Date(2028, 1, 29))).toBe('2010-02-28');
+  });
+});
+
+describe('birthDateProblem', () => {
+  const today = new Date(2026, 10, 4);
+
+  it('passes someone who turns 18 today', () => {
+    expect(birthDateProblem('2008-11-04', today)).toBeNull();
+  });
+
+  it('refuses someone a day short of 18', () => {
+    expect(birthDateProblem('2008-11-05', today)).toBe(
+      'An employee must be at least 18 years old.',
+    );
+  });
+
+  it('refuses a date in the future with its own message', () => {
+    expect(birthDateProblem('2026-11-05', today)).toBe(
+      'Date of birth cannot be in the future.',
+    );
+  });
+
+  it('has nothing to say about an empty field', () => {
+    expect(birthDateProblem('', today)).toBeNull();
+    expect(birthDateProblem(null, today)).toBeNull();
   });
 });

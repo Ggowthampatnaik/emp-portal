@@ -7,6 +7,10 @@
  * employment and contact panels. HR opening the same record still sees all of
  * it, and a Super Admin's own My profile page is a person looking at their own
  * data rather than the module, so it keeps every card too.
+ *
+ * HR sees all of a record but changes only its reporting line: Change on the
+ * manager and Manage on direct reports are the only edit controls they get on
+ * someone else's record.
  */
 
 import { MemoryRouter } from 'react-router-dom';
@@ -19,6 +23,7 @@ import { setUser } from '@/features/auth/authSlice';
 import { makeUser, superAdminUser } from '@/test/fixtures';
 import type { CurrentUser, PermissionCode, RoleSlug } from '@/types/auth';
 import type { EmployeeDetail } from '@/types/domain';
+import { latestBirthDateIso } from '@/utils/date';
 
 const detail = vi.fn();
 const me = vi.fn();
@@ -40,11 +45,27 @@ vi.mock('@/services/api/services', () => ({
     deletionRequest: vi.fn(() => Promise.resolve(null)),
     uploadPhoto: vi.fn(),
     removePhoto: vi.fn(),
+    directReports: vi.fn(() => Promise.resolve([])),
   },
 }));
 
-/** The cards are covered by their own tests; here only their presence matters. */
-const stub = (label: string) => ({ default: () => <div>{label}</div> });
+/**
+ * The cards are covered by their own tests; here only their presence matters,
+ * and whether the page let them offer any changes.
+ */
+interface CardProps {
+  canEdit?: boolean;
+  canManage?: boolean;
+  editable?: boolean;
+  isOwner?: boolean;
+  readOnly?: boolean;
+}
+const stub = (label: string) => ({
+  default: ({ canEdit, canManage, editable, isOwner, readOnly }: CardProps) => {
+    const mayChange = Boolean(canEdit || canManage || editable || isOwner) && !readOnly;
+    return <div data-may-change={mayChange}>{label}</div>;
+  },
+});
 vi.mock('@/features/employees/SkillsCard', () => stub('Skills card'));
 vi.mock('@/features/employees/ExperienceCard', () => stub('Experience card'));
 vi.mock('@/features/employees/DocumentsCard', () => stub('Documents card'));
@@ -179,6 +200,35 @@ describe('EmployeeDetailPage', () => {
     }
   });
 
+  it('leaves HR only the reporting line to change on someone else', async () => {
+    renderPage(hrUser);
+
+    await screen.findByText('Sneha Kulkarni');
+    expect(screen.queryByRole('button', { name: /^edit$/i })).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /change/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /manage/i })).toBeInTheDocument();
+    for (const card of [...OPERATIONAL, 'Photo']) {
+      expect(await screen.findByText(card)).toHaveAttribute('data-may-change', 'false');
+    }
+  });
+
+  it('still lets HR edit their own record', async () => {
+    renderPage({ ...hrUser, email: SNEHA.email }, { self: true });
+
+    expect(await screen.findByRole('button', { name: /^edit$/i })).toBeInTheDocument();
+    expect(await screen.findByText('Skills card')).toHaveAttribute('data-may-change', 'true');
+    expect(await screen.findByText('Bank details card')).toHaveAttribute(
+      'data-may-change',
+      'true',
+    );
+  });
+
+  it('leaves an Admin the Edit button on someone else', async () => {
+    renderPage(adminUser);
+
+    expect(await screen.findByRole('button', { name: /^edit$/i })).toBeInTheDocument();
+  });
+
   it('gives an employee the whole of their own record', async () => {
     renderPage(makeUser({ email: SNEHA.email }), { self: true });
 
@@ -193,16 +243,33 @@ describe('EmployeeDetailPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: /^edit$/i }));
 
     const dob = screen.getByLabelText(/date of birth/i);
-    // The calendar itself stops at today...
-    expect(dob).toHaveAttribute('max', new Date().toLocaleDateString('en-CA'));
 
-    // ...and a date typed past it is caught at once, with Save held.
+    // A date typed past the calendar is caught at once, with Save held.
     fireEvent.change(dob, { target: { value: '2999-01-01' } });
     expect(screen.getByText('Date of birth cannot be in the future.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled();
 
     fireEvent.change(dob, { target: { value: '1990-05-09' } });
     expect(screen.queryByText(/cannot be in the future/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled();
+  });
+
+  it('will not take anyone under 18 on My profile', async () => {
+    renderPage(makeUser({ email: SNEHA.email }), { self: true });
+    fireEvent.click(await screen.findByRole('button', { name: /^edit$/i }));
+
+    const dob = screen.getByLabelText(/date of birth/i);
+    // The calendar itself stops 18 years ago today...
+    expect(dob).toHaveAttribute('max', latestBirthDateIso());
+
+    // ...and a later date typed in is caught at once, with Save held.
+    const tooYoung = `${new Date().getFullYear() - 10}-01-01`;
+    fireEvent.change(dob, { target: { value: tooYoung } });
+    expect(screen.getByText('An employee must be at least 18 years old.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled();
+
+    fireEvent.change(dob, { target: { value: latestBirthDateIso() } });
+    expect(screen.queryByText(/at least 18/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^save$/i })).toBeEnabled();
   });
 

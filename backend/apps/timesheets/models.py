@@ -129,3 +129,37 @@ class TimesheetApproval(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.timesheet_id} {self.action}"
+
+
+class TimesheetReminder(TimeStampedModel):
+    """A reminder to submit a week's timesheet, sent from Submissions.
+
+    One row per employee per week, kept so the Submissions board can show who
+    has already been reminded - "Sent" - after a reload, instead of only for as
+    long as the page that sent it stayed open. Sending again for the same week
+    updates the row rather than adding another.
+    """
+
+    employee = models.ForeignKey(
+        Employee, on_delete=models.CASCADE, related_name="timesheet_reminders"
+    )
+    week_start_date = models.DateField()
+    sent_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    sent_at = models.DateTimeField()
+
+    class Meta:
+        db_table = "timesheet_reminders"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("employee", "week_start_date"), name="one_reminder_per_employee_week"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.employee_id} reminded for {self.week_start_date}"

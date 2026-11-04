@@ -1,5 +1,6 @@
 /** My leave requests, with cancellation where the workflow still allows it. */
 
+import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import Collapse from '@mui/material/Collapse';
 import IconButton from '@mui/material/IconButton';
@@ -19,12 +20,16 @@ import { Fragment, useCallback, useState } from 'react';
 import { useAppDispatch } from '@/app/hooks';
 import { EmptyState, ErrorAlert, TableSkeleton } from '@/components/common/Feedback';
 import { StatusText } from '@/components/common/StatusChip';
+import ApplyLeaveDialog from '@/features/leave/ApplyLeaveDialog';
 import LeaveStageTimeline from '@/features/leave/LeaveStageTimeline';
 import { showToast } from '@/features/ui/uiSlice';
 import { useApiAction, useApiResource } from '@/hooks/useApiResource';
 import { leaveApi } from '@/services/api/services';
 import type { LeaveRequest } from '@/types/domain';
 import { formatDate } from '@/utils/date';
+
+/** Column widths, shared by the table and the grid inside an opened request. */
+const COL = { expander: 56, type: '23%', date: '17%', days: '12%', status: '17%' } as const;
 
 export default function MyLeaveTab({
   reloadKey,
@@ -36,6 +41,7 @@ export default function MyLeaveTab({
   const dispatch = useAppDispatch();
   const [page, setPage] = useState(0);
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [editing, setEditing] = useState<LeaveRequest | null>(null);
 
   const { data, loading, error, reload } = useApiResource(
     useCallback(() => leaveApi.mine({ page: page + 1, page_size: 10 }), [page]),
@@ -65,13 +71,7 @@ export default function MyLeaveTab({
     );
   }
 
-  // The Cancel column only appears when a request on this page can still be
-  // cancelled; otherwise it was an empty strip down the right of the table.
-  const anyCancellable = data.results.some((row) => row.can_cancel);
   const toggle = (id: number) => setExpanded((open) => (open === id ? null : id));
-  const widths = anyCancellable
-    ? { type: '20%', date: '15%', days: '10%', status: '15%' }
-    : { type: '23%', date: '17%', days: '12%', status: '17%' };
 
   return (
     <>
@@ -83,14 +83,13 @@ export default function MyLeaveTab({
         <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 900 }}>
           <TableHead>
             <TableRow>
-              <TableCell sx={{ width: 56 }} />
-              <TableCell sx={{ width: widths.type }}>Type</TableCell>
-              <TableCell sx={{ width: widths.date }}>From</TableCell>
-              <TableCell sx={{ width: widths.date }}>To</TableCell>
-              <TableCell sx={{ width: widths.days }}>Days</TableCell>
-              <TableCell sx={{ width: widths.status }}>Status</TableCell>
+              <TableCell sx={{ width: COL.expander }} />
+              <TableCell sx={{ width: COL.type }}>Type</TableCell>
+              <TableCell sx={{ width: COL.date }}>From</TableCell>
+              <TableCell sx={{ width: COL.date }}>To</TableCell>
+              <TableCell sx={{ width: COL.days }}>Days</TableCell>
+              <TableCell sx={{ width: COL.status }}>Status</TableCell>
               <TableCell>Decided by</TableCell>
-              {anyCancellable && <TableCell align="right" sx={{ width: 110 }} />}
             </TableRow>
           </TableHead>
           <TableBody>
@@ -130,69 +129,90 @@ export default function MyLeaveTab({
                     <StatusText status={row.status} />
                   </TableCell>
                   <TableCell>{row.decided_by_name ?? '-'}</TableCell>
-                  {anyCancellable && (
-                    <TableCell align="right">
-                      {row.can_cancel && (
-                        // The one thing in the row you can press, so it keeps a
-                        // button shape while the statuses are plain text; red.
-                        <Chip
-                          size="small"
-                          color="error"
-                          label="Cancel"
-                          sx={{ width: 79 }}
-                          onClick={(event) => {
-                            // Cancelling is not a request to see the details.
-                            event.stopPropagation();
-                            void handleCancel(row);
-                          }}
-                          disabled={cancel.busy}
-                          aria-label={`Cancel the ${row.leave_type_name} request`}
-                        />
-                      )}
-                    </TableCell>
-                  )}
                 </TableRow>
                 <TableRow>
-                  <TableCell colSpan={anyCancellable ? 8 : 7} sx={{ py: 0, borderBottom: 0 }}>
+                  <TableCell colSpan={7} sx={{ p: 0, borderBottom: 0 }}>
                     <Collapse in={expanded === row.id} unmountOnExit>
-                      <Stack spacing={1} sx={{ py: 2, pl: 7 }}>
-                        <LeaveStageTimeline request={row} />
-                        <Typography variant="body2">
-                          <strong>Reason:</strong> {row.reason}
-                        </Typography>
-                        {row.cc_recipients.length > 0 && (
+                      {/* The table's own columns, all on one row: the details under
+                          Type to Days, Edit under Status and Cancel under Decided
+                          by, level with the approval steps. Without the shared
+                          row, the buttons wrapped below everything else. */}
+                      <Box
+                        sx={{
+                          display: 'grid',
+                          gridTemplateColumns: `${COL.expander}px ${COL.type} ${COL.date} ${COL.date} ${COL.days} ${COL.status} 1fr`,
+                        }}
+                      >
+                        <Stack
+                          spacing={1}
+                          sx={{ gridColumn: '2 / 6', gridRow: 1, py: 2, px: 2 }}
+                        >
+                          <LeaveStageTimeline request={row} />
                           <Typography variant="body2">
-                            <strong>Copied in:</strong>{' '}
-                            {row.cc_recipients.map((entry) => entry.user_name).join(', ')}
+                            <strong>Reason:</strong> {row.reason}
                           </Typography>
-                        )}
-                        {row.decision_comment && (
-                          <Typography variant="body2">
-                            <strong>Decision comment:</strong> {row.decision_comment}
+                          {row.cc_recipients.length > 0 && (
+                            <Typography variant="body2">
+                              <strong>Copied in:</strong>{' '}
+                              {row.cc_recipients.map((entry) => entry.user_name).join(', ')}
+                            </Typography>
+                          )}
+                          {row.decision_comment && (
+                            <Typography variant="body2">
+                              <strong>Decision comment:</strong> {row.decision_comment}
+                            </Typography>
+                          )}
+                          <Typography variant="caption" color="text.secondary">
+                            Applied {new Date(row.applied_at).toLocaleString()}
+                            {row.decided_at
+                              ? ` · decided ${new Date(row.decided_at).toLocaleString()}`
+                              : ''}
                           </Typography>
-                        )}
-                        <Typography variant="caption" color="text.secondary">
-                          Applied {new Date(row.applied_at).toLocaleString()}
-                          {row.decided_at
-                            ? ` · decided ${new Date(row.decided_at).toLocaleString()}`
-                            : ''}
-                        </Typography>
-                        {row.approvals.length > 0 && (
-                          <Stack spacing={0.5}>
-                            {row.approvals.map((entry) => (
-                              <Typography
-                                key={entry.id}
-                                variant="caption"
-                                color="text.secondary"
-                              >
-                                {entry.action} by {entry.actor_name ?? 'system'} —{' '}
-                                {new Date(entry.created_at).toLocaleString()}
-                                {entry.comment ? `: ${entry.comment}` : ''}
-                              </Typography>
-                            ))}
-                          </Stack>
-                        )}
-                      </Stack>
+                          {row.approvals.length > 0 && (
+                            <Stack spacing={0.5}>
+                              {row.approvals.map((entry) => (
+                                <Typography
+                                  key={entry.id}
+                                  variant="caption"
+                                  color="text.secondary"
+                                >
+                                  {entry.action} by {entry.actor_name ?? 'system'} —{' '}
+                                  {new Date(entry.created_at).toLocaleString()}
+                                  {entry.comment ? `: ${entry.comment}` : ''}
+                                </Typography>
+                              ))}
+                            </Stack>
+                          )}
+                        </Stack>
+                        <Box sx={{ gridColumn: '6', gridRow: 1, pt: 2, px: 2 }}>
+                          {row.can_edit && (
+                            // Under Status: changeable only while it is still
+                            // with the manager.
+                            <Chip
+                              size="small"
+                              color="primary"
+                              label="Edit"
+                              sx={{ width: 79 }}
+                              onClick={() => setEditing(row)}
+                              aria-label={`Edit the ${row.leave_type_name} request`}
+                            />
+                          )}
+                        </Box>
+                        <Box sx={{ gridColumn: '7', gridRow: 1, pt: 2, px: 2 }}>
+                          {row.can_cancel && (
+                            // Inside the request it cancels, under Decided by.
+                            <Chip
+                              size="small"
+                              color="error"
+                              label="Cancel"
+                              sx={{ width: 79 }}
+                              onClick={() => void handleCancel(row)}
+                              disabled={cancel.busy}
+                              aria-label={`Cancel the ${row.leave_type_name} request`}
+                            />
+                          )}
+                        </Box>
+                      </Box>
                     </Collapse>
                   </TableCell>
                 </TableRow>
@@ -201,6 +221,20 @@ export default function MyLeaveTab({
           </TableBody>
         </Table>
       </TableContainer>
+
+      {editing && (
+        <ApplyLeaveDialog
+          key={editing.id}
+          open
+          editing={editing}
+          onClose={() => setEditing(null)}
+          onApplied={() => {
+            setEditing(null);
+            void reload();
+            onChanged();
+          }}
+        />
+      )}
 
       <TablePagination
         component="div"

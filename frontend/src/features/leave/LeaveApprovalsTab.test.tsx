@@ -171,6 +171,34 @@ describe('LeaveApprovalsTab', () => {
     expect(screen.getByText(/deducts 2.0 day\(s\) from the balance/i)).toBeInTheDocument();
   });
 
+  it('leaves the Reason column off the HR queue', async () => {
+    renderTab('hr');
+    await screen.findByText('Asha Rao');
+
+    const headings = screen.getAllByRole('columnheader').map((cell) => cell.textContent);
+    expect(headings.slice(-2)).toEqual(['Manager', 'Decision']);
+    expect(screen.queryByText('Family function.')).not.toBeInTheDocument();
+  });
+
+  it('still shows HR the reason when they come to decide', async () => {
+    const user = userEvent.setup();
+    renderTab('hr');
+    await screen.findByText('Asha Rao');
+
+    await user.click(screen.getByRole('button', { name: /approve/i }));
+
+    expect(screen.getByText('Family function.')).toBeInTheDocument();
+  });
+
+  it('keeps the Reason column for the manager', async () => {
+    renderTab('manager');
+    await screen.findByText('Asha Rao');
+
+    const headings = screen.getAllByRole('columnheader').map((cell) => cell.textContent);
+    expect(headings.slice(-2)).toEqual(['Reason', 'Decision']);
+    expect(screen.getByText('Family function.')).toBeInTheDocument();
+  });
+
   it('shows the applicant’s remaining balance on every row', async () => {
     renderTab('manager');
     await screen.findByText('Asha Rao');

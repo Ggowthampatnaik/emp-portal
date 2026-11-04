@@ -365,7 +365,7 @@ export default function DashboardPage() {
                 }
               />
               <StatCard
-                title="This week"
+                title="Timesheet"
                 value={`${data.me.week_hours} h`}
                 chip={data.me.week_status}
                 detail="Hours booked on the current timesheet"

@@ -1,8 +1,5 @@
-# Hostinger VPS: production as-is. The PostgreSQL driver (psycopg) is already
-# in base.txt.
-#
-# Only if the server uses MySQL/MariaDB instead, also install its driver - it
-# needs the system headers first:
+# Hostinger VPS: production plus the MySQL driver. It compiles on install, so it
+# needs the system headers first (DEPLOY_HOSTINGER.md, step 1):
 #   sudo apt install -y pkg-config default-libmysqlclient-dev build-essential python3-dev
-#   .venv/bin/pip install "mysqlclient>=2.2.1"
 -r prod.txt
+mysqlclient>=2.2.1

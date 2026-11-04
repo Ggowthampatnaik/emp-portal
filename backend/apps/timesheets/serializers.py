@@ -136,6 +136,9 @@ class SubmissionStatusSerializer(serializers.Serializer):
     status = serializers.CharField(allow_null=True)
     total_hours = serializers.DecimalField(max_digits=6, decimal_places=2, allow_null=True)
     submitted = serializers.BooleanField()
+    reminded_at = serializers.DateTimeField(
+        allow_null=True, help_text="When a reminder about this week was last sent."
+    )
 
 
 class ProjectSubmissionSerializer(serializers.Serializer):

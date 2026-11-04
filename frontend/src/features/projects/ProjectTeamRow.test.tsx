@@ -240,12 +240,20 @@ describe('ProjectTeamRow', () => {
     await waitFor(() => expect(employeeList).toHaveBeenCalled());
   });
 
-  it('flags an allocation belonging to somebody no longer on the team', async () => {
+  it('totals only the people on the team now, with no warning about the rest', async () => {
     detail.mockResolvedValue(
-      project([member()], [allocation(), allocation({ id: 2, employee: 99 })]),
+      project(
+        [member()],
+        [
+          allocation({ allocation_percentage: '40.00' }),
+          // Someone taken off the team: their record stays, but not in the total.
+          allocation({ id: 2, employee: 99, allocation_percentage: '50.00' }),
+        ],
+      ),
     );
     renderRow();
 
-    expect(await screen.findByText(/no longer on the team/i)).toBeInTheDocument();
+    expect(await screen.findByText('40% of a person allocated in total')).toBeInTheDocument();
+    expect(screen.queryByText(/no longer on the team/i)).not.toBeInTheDocument();
   });
 });

@@ -51,7 +51,14 @@ class Project(AuditableModel):
         return self.status in {self.Status.PLANNED, self.Status.ACTIVE, self.Status.ON_HOLD}
 
     def total_allocation(self, exclude_employee_id: int | None = None) -> Decimal:
-        rows = self.allocations.filter(is_active=True)
+        """Allocation of the people on the team now.
+
+        An allocation can outlive its membership - someone taken off the team
+        keeps the allocation record - and counting those made the total read
+        higher than the people actually on the project.
+        """
+        on_team = self.members.filter(left_on__isnull=True).values("employee_id")
+        rows = self.allocations.filter(is_active=True, employee_id__in=on_team)
         if exclude_employee_id:
             rows = rows.exclude(employee_id=exclude_employee_id)
         return rows.aggregate(total=Sum("allocation_percentage"))["total"] or Decimal("0")

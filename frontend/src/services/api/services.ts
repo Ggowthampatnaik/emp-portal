@@ -216,6 +216,8 @@ export const leaveApi = {
     http.get<Paginated<LeaveRequest>>(endpoints.leave.mine, { params: query(params) }),
   detail: (id: number | string) => http.get<LeaveRequest>(endpoints.leave.detail(id)),
   apply: (body: ApplyLeavePayload) => http.post<LeaveRequest>(endpoints.leave.requests, body),
+  edit: (id: number | string, body: Omit<ApplyLeavePayload, 'cc_user_ids'>) =>
+    http.post<LeaveRequest>(`${endpoints.leave.requests}${id}/edit/`, body),
   approve: (id: number | string, comment = '') =>
     http.post<LeaveRequest>(endpoints.leave.approve(id), { comment }),
   reject: (id: number | string, comment = '') =>

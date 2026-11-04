@@ -444,8 +444,14 @@ class DashboardSummaryView(APIView):
             # would dominate the headline number without describing anyone's
             # ordinary year - the balance keeps its own card on the Leave page
             # for those who hold it, and stays out of this total for everyone.
+            # Unpaid leave (Loss of Pay, 60 days) stays out too: it is not time
+            # off anyone is owed, and counting it made "Leave available" read
+            # 60 days higher than the paid leave anyone actually has.
             balances = LeaveBalance.objects.filter(
-                employee=profile, year=today.year, leave_type__restricted_to_gender=""
+                employee=profile,
+                year=today.year,
+                leave_type__restricted_to_gender="",
+                leave_type__is_paid=True,
             )
             entitled = sum(
                 (b.allocated_days + b.carried_forward_days for b in balances), Decimal("0")

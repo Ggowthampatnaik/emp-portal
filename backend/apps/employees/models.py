@@ -4,6 +4,9 @@ Tables: departments, designations, employees, employee_documents,
 employee_bank_accounts, skills, employee_skills
 """
 
+import calendar
+from datetime import date
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinLengthValidator, RegexValidator
@@ -13,11 +16,35 @@ from django.utils import timezone
 from common.enums import EmploymentStatus
 from common.models import AuditableModel, TimeStampedModel
 
+#: The youngest anyone can be to work here. The browser holds the same number
+#: (frontend/src/utils/date.ts) so the calendar can stop at the same day.
+MINIMUM_EMPLOYEE_AGE = 18
+
 
 def validate_not_in_future(value) -> None:
     """Nobody is born tomorrow. "Today" is the company's calendar (TIME_ZONE)."""
     if value and value > timezone.localdate():
         raise ValidationError("Date of birth cannot be in the future.", code="future_date")
+
+
+def latest_birth_date(today: date) -> date:
+    """The most recent birthday that is old enough today.
+
+    29 February has no twin in most years, so it falls back to the 28th.
+    """
+    year = today.year - MINIMUM_EMPLOYEE_AGE
+    last_day = calendar.monthrange(year, today.month)[1]
+    return today.replace(year=year, day=min(today.day, last_day))
+
+
+def validate_minimum_age(value) -> None:
+    """Old enough to employ. A future date has its own message, and one is enough."""
+    today = timezone.localdate()
+    if value and latest_birth_date(today) < value <= today:
+        raise ValidationError(
+            f"An employee must be at least {MINIMUM_EMPLOYEE_AGE} years old.",
+            code="under_minimum_age",
+        )
 
 
 class Department(TimeStampedModel):
@@ -113,7 +140,9 @@ class Employee(AuditableModel):
         blank=True,
         validators=[RegexValidator(r"^[0-9+\-\s()]{6,20}$", "Enter a valid phone number.")],
     )
-    date_of_birth = models.DateField(null=True, blank=True, validators=[validate_not_in_future])
+    date_of_birth = models.DateField(
+        null=True, blank=True, validators=[validate_not_in_future, validate_minimum_age]
+    )
     gender = models.CharField(max_length=15, choices=Gender.choices, blank=True)
     blood_group = models.CharField(
         max_length=3,

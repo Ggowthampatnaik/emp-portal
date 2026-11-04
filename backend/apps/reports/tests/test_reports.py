@@ -158,3 +158,29 @@ def test_dashboard_summary_is_role_aware(auth_client, with_activity):
     hr = auth_client(with_activity["hr"]).get("/api/v1/dashboard/summary/")
     assert "organization" in hr.data
     assert hr.data["organization"]["headcount"] == 6
+
+
+@pytest.mark.django_db
+def test_leave_available_counts_paid_leave_only(auth_client, org, leave_type):
+    """Loss of Pay (unpaid, 60 days) is not added to the dashboard's headline."""
+    from datetime import date
+    from decimal import Decimal
+
+    from apps.leave_management.models import LeaveBalance, LeaveType
+
+    lop = LeaveType.objects.create(
+        code="LOP", name="Loss of Pay", days_per_year=Decimal("60.0"), is_paid=False
+    )
+    year = date.today().year
+    LeaveBalance.objects.create(
+        employee=org["employee"], leave_type=leave_type, year=year, allocated_days=Decimal("18.0")
+    )
+    LeaveBalance.objects.create(
+        employee=org["employee"], leave_type=lop, year=year, allocated_days=Decimal("60.0")
+    )
+
+    response = auth_client(org["employee"]).get("/api/v1/dashboard/summary/")
+
+    assert response.status_code == 200
+    assert response.data["me"]["leave_entitled"] == "18.0"
+    assert response.data["me"]["leave_available"] == "18.0"

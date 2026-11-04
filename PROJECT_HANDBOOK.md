@@ -861,6 +861,8 @@ DRAFT ──process──→ PROCESSED ──approve──→ APPROVED ──mar
 | Employees deactivated, never deleted | Leave, timesheet and payroll history references them |
 | Projects cancelled, never deleted | Same |
 | SQLite fallback for local dev | Docker is not installed on this machine; PostgreSQL everywhere else |
+| HR changes only the reporting line on someone else's record | Asked for 4 Nov: the record is read-only for HR apart from Change on Reporting manager and Manage on Direct reports. Account closure stays, because it is a request rather than an edit. HR's own My profile is unaffected. Enforced in the UI only - the API still accepts `employee.edit`, `bank.manage` and `asset.manage` from HR |
+| Employees must be 18 or over | Asked for 4 Nov. A validator on `Employee.date_of_birth`, so every write path holds it, with the calendar stopping at the same day; `MINIMUM_EMPLOYEE_AGE` lives in `apps/employees/models.py` and `frontend/src/utils/date.ts`. Only a date being written is checked, so an older record is not frozen on the API |
 | Registration is the login page itself | The temp-password + forced-change flow already covered the whole journey; the separate register window was a second door to maintain and was removed |
 | Every joiner starts as `employee` | An account with no role sees a sidebar of nothing; add-user raises account, employment record and baseline role together |
 | Nobody edits their own roles or deletes their own account | Both happened or nearly happened in testing; somebody else must hold the pen |

@@ -19,7 +19,7 @@ import { useAppDispatch } from '@/app/hooks';
 import { showToast } from '@/features/ui/uiSlice';
 import { useApiAction, useApiResource } from '@/hooks/useApiResource';
 import { leaveApi } from '@/services/api/services';
-import type { DayPart, PersonSearchResult } from '@/types/domain';
+import type { DayPart, LeaveRequest, PersonSearchResult } from '@/types/domain';
 import { fromIsoDate, toIsoDate, todayIso } from '@/utils/date';
 import ClosableDialogTitle from '@/components/common/ClosableDialogTitle';
 import PeoplePicker from '@/components/common/PeoplePicker';
@@ -28,6 +28,12 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onApplied: () => void;
+  /**
+   * A pending request to change instead of a new one: the form opens filled
+   * in with it, and saving edits it. Give the dialog a `key` per request so
+   * it starts from that request's details.
+   */
+  editing?: LeaveRequest | null;
 }
 
 const DAY_PARTS: { value: DayPart; label: string }[] = [
@@ -60,15 +66,25 @@ function previewDays(
   return dayPart === 'full' ? count : 0.5;
 }
 
-export default function ApplyLeaveDialog({ open, onClose, onApplied }: Props) {
+export default function ApplyLeaveDialog({ open, onClose, onApplied, editing = null }: Props) {
   const dispatch = useAppDispatch();
-  const [form, setForm] = useState({
-    leave_type: '',
-    start_date: today(),
-    end_date: today(),
-    day_part: 'full' as DayPart,
-    reason: '',
-  });
+  const [form, setForm] = useState(() =>
+    editing
+      ? {
+          leave_type: String(editing.leave_type),
+          start_date: editing.start_date,
+          end_date: editing.end_date,
+          day_part: editing.day_part as DayPart,
+          reason: editing.reason,
+        }
+      : {
+          leave_type: '',
+          start_date: today(),
+          end_date: today(),
+          day_part: 'full' as DayPart,
+          reason: '',
+        },
+  );
   // Held as whole rows so the chips keep their names without another lookup.
   const [cc, setCc] = useState<PersonSearchResult[]>([]);
 
@@ -89,7 +105,10 @@ export default function ApplyLeaveDialog({ open, onClose, onApplied }: Props) {
     [],
   );
 
-  const apply = useApiAction(leaveApi.apply);
+  const create = useApiAction(leaveApi.apply);
+  const change = useApiAction(leaveApi.edit);
+  // One set of busy / error state for whichever of the two this form does.
+  const apply = editing ? change : create;
 
   const mandatoryHolidays = useMemo(
     () =>
@@ -105,8 +124,22 @@ export default function ApplyLeaveDialog({ open, onClose, onApplied }: Props) {
   const selectedBalance = (balances.data ?? []).find(
     (balance) => String(balance.leave_type) === form.leave_type,
   );
+  // Loss of Pay is unpaid - payroll deducts the days from that month's salary
+  // - and capped at its yearly allowance. Only an unpaid type with no allowance
+  // at all has nothing to exceed.
+  const unpaid = selectedBalance?.leave_type_is_paid === false;
+  const uncapped = unpaid && Number(selectedBalance?.entitled_days ?? 0) <= 0;
+  // When editing, the request's own days are already held on its balance -
+  // they come back to it, so they count as available for the new dates.
+  const ownDays =
+    editing &&
+    selectedBalance &&
+    String(editing.leave_type) === form.leave_type &&
+    Number(editing.start_date.slice(0, 4)) === bookingYear
+      ? Number(editing.total_days)
+      : 0;
   const exceedsBalance = Boolean(
-    selectedBalance && days > Number(selectedBalance.available_days),
+    selectedBalance && !uncapped && days > Number(selectedBalance.available_days) + ownDays,
   );
 
   const set = (field: keyof typeof form) => (event: { target: { value: string } }) =>
@@ -124,7 +157,26 @@ export default function ApplyLeaveDialog({ open, onClose, onApplied }: Props) {
     });
 
   const handleSubmit = async () => {
-    const created = await apply.run({
+    if (editing) {
+      const saved = await change.run(editing.id, {
+        leave_type: Number(form.leave_type),
+        start_date: form.start_date,
+        end_date: form.end_date,
+        day_part: form.day_part,
+        reason: form.reason,
+      });
+      if (saved) {
+        dispatch(
+          showToast(
+            `Leave request updated: ${saved.total_days} day(s), with your manager.`,
+            'success',
+          ),
+        );
+        onApplied();
+      }
+      return;
+    }
+    const created = await create.run({
       leave_type: Number(form.leave_type),
       start_date: form.start_date,
       end_date: form.end_date,
@@ -152,7 +204,9 @@ export default function ApplyLeaveDialog({ open, onClose, onApplied }: Props) {
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <ClosableDialogTitle onClose={onClose}>Apply for leave</ClosableDialogTitle>
+      <ClosableDialogTitle onClose={onClose}>
+        {editing ? 'Edit leave request' : 'Apply for leave'}
+      </ClosableDialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           {apply.error && !Object.keys(apply.fieldErrors).length && (
@@ -181,7 +235,12 @@ export default function ApplyLeaveDialog({ open, onClose, onApplied }: Props) {
                   <MenuItem key={type.id} value={String(type.id)}>
                     {type.name}
                     {balance
-                      ? ` — ${balance.available_days} day(s) available in ${bookingYear}`
+                      ? balance.leave_type_is_paid === false &&
+                        Number(balance.entitled_days) <= 0
+                        ? ' — unpaid, deducted from salary'
+                        : ` — ${balance.available_days} day(s) available in ${bookingYear}${
+                            balance.leave_type_is_paid === false ? ', unpaid' : ''
+                          }`
                       : ''}
                   </MenuItem>
                 );
@@ -234,13 +293,19 @@ export default function ApplyLeaveDialog({ open, onClose, onApplied }: Props) {
             />
           </Stack>
 
-          <Alert severity={days === 0 ? 'warning' : exceedsBalance ? 'error' : 'info'}>
+          <Alert
+            severity={
+              days === 0 ? 'warning' : exceedsBalance ? 'error' : unpaid ? 'warning' : 'info'
+            }
+          >
             {days === 0
               ? 'The selected dates contain no working days — weekends and company holidays do not consume leave.'
               : exceedsBalance
                 ? `This request needs ${days} day(s) but only ${selectedBalance?.available_days} are available in ${bookingYear}.`
-                : `This request will use ${days} working day(s).`}
-            {bookingYear !== new Date().getFullYear() && days > 0 && (
+                : unpaid
+                  ? `This is unpaid leave: ${days} working day(s) will be deducted from your salary for that month once approved.`
+                  : `This request will use ${days} working day(s).`}
+            {bookingYear !== new Date().getFullYear() && days > 0 && !uncapped && (
               <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
                 Counted against your {bookingYear} entitlement.
               </Typography>
@@ -260,16 +325,19 @@ export default function ApplyLeaveDialog({ open, onClose, onApplied }: Props) {
             // behaves the same way.
             {...fieldProps('reason')}
           />
-          <PeoplePicker
-            value={cc}
-            onChange={setCc}
-            label="Copy in (optional)"
-            max={10}
-            helperText={
-              apply.fieldErrors.cc_user_ids ??
-              'They are told the request exists. It gives them no say in it and no access to it.'
-            }
-          />
+          {/* Who was copied in is settled when the request is made. */}
+          {!editing && (
+            <PeoplePicker
+              value={cc}
+              onChange={setCc}
+              label="Copy in (optional)"
+              max={10}
+              helperText={
+                apply.fieldErrors.cc_user_ids ??
+                'They are told the request exists. It gives them no say in it and no access to it.'
+              }
+            />
+          )}
         </Stack>
       </DialogContent>
       <DialogActions>
@@ -281,12 +349,13 @@ export default function ApplyLeaveDialog({ open, onClose, onApplied }: Props) {
           onClick={handleSubmit}
           disabled={apply.busy || !form.leave_type || !form.reason || days === 0}
         >
-          {apply.busy ? 'Submitting...' : 'Submit request'}
+          {apply.busy ? 'Saving...' : editing ? 'Save changes' : 'Submit request'}
         </Button>
       </DialogActions>
       <Typography variant="caption" color="text.secondary" sx={{ px: 3, pb: 2 }}>
-        Your reporting manager is notified as soon as you submit, and HR confirms it after they
-        approve.
+        {editing
+          ? 'Your reporting manager is told about the change. You can edit until they act on it.'
+          : 'Your reporting manager is notified as soon as you submit, and HR confirms it after they approve.'}
       </Typography>
     </Dialog>
   );

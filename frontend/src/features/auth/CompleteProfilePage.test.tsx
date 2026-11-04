@@ -14,7 +14,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createStore } from '@/app/store';
-import { todayIso } from '@/utils/date';
+import { latestBirthDateIso } from '@/utils/date';
 
 const me = vi.fn();
 const completeProfile = vi.fn();
@@ -237,10 +237,7 @@ describe('CompleteProfilePage', () => {
     renderPage();
 
     const dob = await screen.findByLabelText(/date of birth/i);
-    // The calendar itself stops at today.
-    expect(dob).toHaveAttribute('max', todayIso());
-
-    // Typing one in is caught too, and the step will not move on.
+    // Typing one in is caught, and the step will not move on.
     await fillStepOne(user);
     await user.clear(dob);
     await user.type(dob, '2999-01-01');
@@ -250,6 +247,27 @@ describe('CompleteProfilePage', () => {
     await user.clear(dob);
     await user.type(dob, '1996-04-12');
     expect(screen.queryByText(/cannot be in the future/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
+  });
+
+  it('will not take anyone under 18', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    const dob = await screen.findByLabelText(/date of birth/i);
+    // The calendar itself stops 18 years ago today.
+    expect(dob).toHaveAttribute('max', latestBirthDateIso());
+
+    // Typing a later date is caught too, and the step will not move on.
+    await fillStepOne(user);
+    await user.clear(dob);
+    await user.type(dob, `${new Date().getFullYear() - 10}-01-01`);
+    expect(screen.getByText('An employee must be at least 18 years old.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+
+    await user.clear(dob);
+    await user.type(dob, latestBirthDateIso());
+    expect(screen.queryByText(/at least 18/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
   });
 

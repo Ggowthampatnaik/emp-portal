@@ -21,6 +21,37 @@ export function todayIso(): string {
   return toIsoDate(new Date());
 }
 
+/** The youngest anyone can be to work here. The server holds the same number. */
+export const MINIMUM_EMPLOYEE_AGE = 18;
+
+/**
+ * The most recent birthday that is old enough on `today`. 29 February has no
+ * twin in most years, so it falls back to the 28th.
+ */
+export function latestBirthDateIso(today: Date = new Date()): string {
+  const year = today.getFullYear() - MINIMUM_EMPLOYEE_AGE;
+  const month = today.getMonth();
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  return toIsoDate(new Date(year, month, Math.min(today.getDate(), lastDay)));
+}
+
+/**
+ * Why a date of birth would be refused, or null when it is fine. `max` on the
+ * input stops the calendar offering these, but a date can still be typed in.
+ * ISO dates compare correctly as strings. Messages match the server's.
+ */
+export function birthDateProblem(
+  iso: string | null | undefined,
+  today: Date = new Date(),
+): string | null {
+  if (!iso) return null;
+  if (iso > toIsoDate(today)) return 'Date of birth cannot be in the future.';
+  if (iso > latestBirthDateIso(today)) {
+    return `An employee must be at least ${MINIMUM_EMPLOYEE_AGE} years old.`;
+  }
+  return null;
+}
+
 /** Parses YYYY-MM-DD as a local date - `new Date('2026-08-24')` is UTC midnight. */
 export function fromIsoDate(iso: string): Date {
   const [year, month, day] = iso.split('-').map(Number);

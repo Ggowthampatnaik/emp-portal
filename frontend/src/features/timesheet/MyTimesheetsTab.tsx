@@ -16,7 +16,14 @@ import { useApiResource } from '@/hooks/useApiResource';
 import { timesheetsApi } from '@/services/api/services';
 import { formatDateRange } from '@/utils/date';
 
-export default function MyTimesheetsTab({ reloadKey }: { reloadKey: number }) {
+export default function MyTimesheetsTab({
+  reloadKey,
+  onOpen,
+}: {
+  reloadKey: number;
+  /** Opens a week in the timesheet editor, given its Monday (YYYY-MM-DD). */
+  onOpen?: (weekStart: string) => void;
+}) {
   const [page, setPage] = useState(0);
   const { data, loading, error, reload } = useApiResource(
     useCallback(() => timesheetsApi.mine({ page: page + 1, page_size: 12 }), [page]),
@@ -55,7 +62,12 @@ export default function MyTimesheetsTab({ reloadKey }: { reloadKey: number }) {
           </TableHead>
           <TableBody>
             {data.results.map((row) => (
-              <TableRow key={row.id} hover>
+              <TableRow
+                key={row.id}
+                hover
+                onClick={onOpen ? () => onOpen(row.week_start_date) : undefined}
+                sx={onOpen ? { cursor: 'pointer' } : undefined}
+              >
                 <TableCell>{formatDateRange(row.week_start_date, row.week_end_date)}</TableCell>
                 <TableCell>{row.total_hours}</TableCell>
                 <TableCell>

@@ -10,6 +10,7 @@
 import { Provider } from 'react-redux';
 import { MemoryRouter } from 'react-router-dom';
 import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createStore } from '@/app/store';
@@ -20,6 +21,8 @@ const pendingApprovals = vi.fn();
 const submissionCounts = vi.fn();
 const statusByEmployee = vi.fn();
 const statusByProject = vi.fn();
+const mine = vi.fn();
+const weekly = vi.fn();
 
 vi.mock('@/services/api/services', () => ({
   timesheetsApi: {
@@ -27,11 +30,15 @@ vi.mock('@/services/api/services', () => ({
     submissionCounts: (...args: unknown[]) => submissionCounts(...args),
     statusByEmployee: (...args: unknown[]) => statusByEmployee(...args),
     statusByProject: (...args: unknown[]) => statusByProject(...args),
-    mine: () => Promise.resolve({ count: 0, results: [] }),
+    mine: (...args: unknown[]) => mine(...args),
     week: () => Promise.resolve(null),
+    weekly: (...args: unknown[]) => weekly(...args),
     notify: vi.fn(),
   },
-  projectsApi: { list: () => Promise.resolve({ count: 0, results: [] }) },
+  projectsApi: {
+    list: () => Promise.resolve({ count: 0, results: [] }),
+    myAllocations: () => Promise.resolve([]),
+  },
 }));
 
 const { default: TimesheetsPage } = await import('@/features/timesheet/TimesheetsPage');
@@ -73,6 +80,8 @@ beforeEach(() => {
   });
   statusByEmployee.mockResolvedValue({ results: [], submitted_count: 0, pending_count: 0 });
   statusByProject.mockResolvedValue({ results: [] });
+  mine.mockResolvedValue({ count: 0, results: [] });
+  weekly.mockReturnValue(new Promise(() => {}));
 });
 
 describe('TimesheetsPage', () => {
@@ -158,5 +167,36 @@ describe('TimesheetsPage, arriving from an approval link', () => {
 
     const tab = await screen.findByRole('tab', { name: /this week/i });
     expect(tab).toHaveAttribute('aria-selected', 'true');
+  });
+});
+
+describe('TimesheetsPage, opening a past week', () => {
+  it('opens a week from My timesheets in the editor', async () => {
+    const user = userEvent.setup();
+    mine.mockResolvedValue({
+      count: 1,
+      results: [
+        {
+          id: 9,
+          week_start_date: '2026-10-12',
+          week_end_date: '2026-10-18',
+          total_hours: '0.00',
+          status: 'draft',
+          submitted_at: null,
+          decided_at: null,
+          decision_comment: '',
+        },
+      ],
+    });
+    renderAs(EMPLOYEE);
+
+    await user.click(await screen.findByRole('tab', { name: /my timesheets/i }));
+    await user.click(await screen.findByText(/12 Oct/));
+
+    await waitFor(() => expect(weekly).toHaveBeenLastCalledWith('2026-10-12'));
+    expect(screen.getByRole('tab', { name: /this week/i })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
   });
 });

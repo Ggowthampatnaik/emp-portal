@@ -81,7 +81,12 @@ export default function ProjectTeamRow({ projectId }: { projectId: number }) {
   if (!data) return null;
 
   const members = data.members.filter((member) => member.is_active);
-  const allocations = data.allocations.filter((allocation) => allocation.is_active);
+  // Only the allocations of people on the team now. Someone taken off keeps
+  // their allocation record, but it is not part of the team's total.
+  const allocations = data.allocations.filter(
+    (allocation) =>
+      allocation.is_active && members.some((member) => member.employee === allocation.employee),
+  );
   const totalAllocation = allocations.reduce(
     (sum, row) => sum + Number(row.allocation_percentage),
     0,
@@ -234,18 +239,6 @@ export default function ProjectTeamRow({ projectId }: { projectId: number }) {
             })}
           </TableBody>
         </Table>
-      )}
-
-      {/* Allocated but not on the team: a real state, and one nobody would
-          otherwise see, because the table above is driven by membership. */}
-      {allocations.some((a) => !members.some((m) => m.employee === a.employee)) && (
-        <Typography
-          variant="caption"
-          color="warning.main"
-          sx={{ display: 'block', mt: 1.5, pl: TEXT_INDENT }}
-        >
-          Some allocations belong to people who are no longer on the team.
-        </Typography>
       )}
 
       {addingMember && (

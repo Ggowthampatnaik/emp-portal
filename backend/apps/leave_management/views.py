@@ -28,6 +28,7 @@ from apps.leave_management.serializers import (
 from apps.leave_management.services import (
     apply_for_leave,
     cancel_leave,
+    edit_leave,
     get_or_create_balance,
     hr_approve,
     hr_send_back,
@@ -235,7 +236,7 @@ class LeaveRequestViewSet(
     ordering = ("-start_date",)
 
     def get_serializer_class(self):
-        if self.action == "create":
+        if self.action in ("create", "edit"):
             return LeaveRequestCreateSerializer
         if self.action == "send_back":
             return LeaveSendBackSerializer
@@ -469,6 +470,49 @@ class LeaveRequestViewSet(
     @action(detail=True, methods=["post"], url_path="send-back")
     def send_back(self, request: Request, pk: str | None = None) -> Response:
         return self._decide(request, pk or "", hr_send_back, AuditAction.REJECT)
+
+    @extend_schema(request=LeaveRequestCreateSerializer, responses={200: LeaveRequestSerializer})
+    @action(detail=True, methods=["post"], url_path="edit")
+    def edit(self, request: Request, pk: str | None = None) -> Response:
+        """The applicant changes their own request while it waits for the manager."""
+        leave_request = self.get_object()
+        # A manager or HR can see the request, but it is the applicant's to change.
+        if leave_request.employee.user_id != request.user.pk:
+            raise PermissionDenied("Only the person who applied can edit this request.")
+        serializer = LeaveRequestCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        before = {
+            "leave_type": leave_request.leave_type.code,
+            "start_date": str(leave_request.start_date),
+            "end_date": str(leave_request.end_date),
+            "total_days": str(leave_request.total_days),
+        }
+        updated = edit_leave(
+            leave_request.pk,
+            request.user,
+            leave_type=data["leave_type"],
+            start=data["start_date"],
+            end=data["end_date"],
+            reason=data["reason"],
+            day_part=data["day_part"],
+            contact_number=data.get("contact_number", ""),
+        )
+        record_audit(
+            request,
+            AuditAction.UPDATE,
+            updated,
+            changes={
+                "before": before,
+                "after": {
+                    "leave_type": updated.leave_type.code,
+                    "start_date": str(updated.start_date),
+                    "end_date": str(updated.end_date),
+                    "total_days": str(updated.total_days),
+                },
+            },
+        )
+        return Response(LeaveRequestSerializer(updated).data)
 
     @extend_schema(request=LeaveDecisionSerializer, responses={200: LeaveRequestSerializer})
     @action(detail=True, methods=["post"])

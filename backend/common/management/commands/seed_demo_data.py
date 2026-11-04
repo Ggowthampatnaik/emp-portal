@@ -234,7 +234,8 @@ LEAVE_TYPES = [
     ("EL", "Earned Leave", Decimal("18.0"), True, None, True, True, ""),
     ("SL", "Sick Leave", Decimal("12.0"), True, 5, True, False, ""),
     ("CL", "Casual Leave", Decimal("8.0"), True, 3, True, False, ""),
-    ("LOP", "Loss of Pay", Decimal("0.0"), False, None, False, False, ""),
+    # Unpaid, and capped: up to 60 days a year (company policy, Oct 2026).
+    ("LOP", "Loss of Pay", Decimal("60.0"), False, None, False, False, ""),
     ("MAT", "Maternity Leave", Decimal("182.0"), True, None, False, False, "female"),
 ]
 
@@ -943,7 +944,7 @@ class Command(BaseCommand):
                 if EmployeeDocument.objects.filter(employee=employee, document_type=kind).exists():
                     continue
                 body = (
-                    f"%PDF-1.4\n% Demo document for {employee.full_name}\n" f"% {title}\n%%EOF\n"
+                    f"%PDF-1.4\n% Demo document for {employee.full_name}\n% {title}\n%%EOF\n"
                 ).encode()
                 document = EmployeeDocument(
                     employee=employee,

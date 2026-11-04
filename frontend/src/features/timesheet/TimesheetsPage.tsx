@@ -37,6 +37,8 @@ export default function TimesheetsPage() {
   const tabForPath = pathname.endsWith('/approvals') && queueTab >= 0 ? queueTab : 0;
 
   const [tab, setTab] = useState(tabForPath);
+  // A week picked from My timesheets, opened in the editor on the first tab.
+  const [openWeek, setOpenWeek] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const refreshAll = () => setReloadKey((key) => key + 1);
 
@@ -82,7 +84,10 @@ export default function TimesheetsPage() {
       <Card>
         <Tabs
           value={tab}
-          onChange={(_, next) => setTab(next)}
+          onChange={(_, next) => {
+            setOpenWeek(null); // the tab itself always opens on the current week
+            setTab(next);
+          }}
           variant="scrollable"
           scrollButtons="auto"
           sx={{ px: 2, borderBottom: 1, borderColor: 'divider' }}
@@ -105,8 +110,22 @@ export default function TimesheetsPage() {
           )}
         </Tabs>
 
-        {tab === 0 && <WeeklyGrid onChanged={refreshAll} />}
-        {tab === 1 && <MyTimesheetsTab reloadKey={reloadKey} />}
+        {tab === 0 && (
+          <WeeklyGrid
+            key={openWeek ?? 'current'}
+            initialWeek={openWeek}
+            onChanged={refreshAll}
+          />
+        )}
+        {tab === 1 && (
+          <MyTimesheetsTab
+            reloadKey={reloadKey}
+            onOpen={(weekStart) => {
+              setOpenWeek(weekStart);
+              setTab(0);
+            }}
+          />
+        )}
         {tab === REQUESTS && (
           <TimesheetApprovalsTab reloadKey={reloadKey} onChanged={refreshAll} />
         )}

@@ -167,9 +167,20 @@ def short_leave_type(db) -> LeaveType:
 
 @pytest.fixture
 def small_quota_leave_type(db) -> LeaveType:
-    """Three days a year and no per-request cap, so quota is the binding limit."""
+    """Three days a year and no per-request cap, so quota is the binding limit.
+
+    Paid: unpaid leave (Loss of Pay) is not held to a quota at all.
+    """
     return LeaveType.objects.create(
-        code="LOP", name="Loss of Pay", days_per_year=Decimal("3.0"), is_paid=False
+        code="CL", name="Casual Leave", days_per_year=Decimal("3.0"), is_paid=True
+    )
+
+
+@pytest.fixture
+def lop_leave_type(db) -> LeaveType:
+    """Loss of Pay as the portal seeds it: unpaid, and no allowance at all."""
+    return LeaveType.objects.create(
+        code="LOP", name="Loss of Pay", days_per_year=Decimal("0.0"), is_paid=False
     )
 
 

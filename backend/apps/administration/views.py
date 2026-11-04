@@ -1,11 +1,15 @@
 """Administration API: users, roles, permissions, settings, audit log."""
 
+from datetime import date, datetime, time, timedelta
+
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.utils import timezone
+from django.utils.dateparse import parse_date
 from drf_spectacular.utils import extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -314,6 +318,25 @@ class SystemSettingViewSet(
         record_audit(self.request, AuditAction.CREATE, serializer.save())
 
 
+def start_of_day(day: date) -> datetime:
+    """Midnight on the company's calendar (TIME_ZONE)."""
+    return timezone.make_aware(datetime.combine(day, time.min))
+
+
+def date_param(params, name: str) -> date | None:
+    """An optional YYYY-MM-DD query parameter."""
+    value = params.get(name)
+    if not value:
+        return None
+    try:
+        day = parse_date(value)
+    except ValueError:  # the right shape, but not a date: 2026-02-31
+        day = None
+    if day is None:
+        raise ValidationError({name: ["Enter a date as YYYY-MM-DD."]})
+    return day
+
+
 class AuditLogViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     """The audit trail. Read-only by design - rows are never edited."""
 
@@ -327,10 +350,15 @@ class AuditLogViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     def get_queryset(self):
         queryset = AuditLog.objects.select_related("actor")
         params = self.request.query_params
-        if params.get("from"):
-            queryset = queryset.filter(created_at__date__gte=params["from"])
-        if params.get("to"):
-            queryset = queryset.filter(created_at__date__lte=params["to"])
+        # A range, not `created_at__date`: that makes MySQL convert time zones
+        # by name, and without its optional time zone tables every row compares
+        # as NULL, so the filter would find nothing and say nothing.
+        first = date_param(params, "from")
+        if first:
+            queryset = queryset.filter(created_at__gte=start_of_day(first))
+        last = date_param(params, "to")
+        if last:
+            queryset = queryset.filter(created_at__lt=start_of_day(last + timedelta(days=1)))
         return queryset
 
 

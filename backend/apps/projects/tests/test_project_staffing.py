@@ -231,9 +231,9 @@ def test_hr_can_expand_a_project_they_are_not_on(auth_client, org, allocated_pro
     response = auth_client(org["hr"]).get(f"/api/v1/projects/{allocated_project.pk}/")
 
     assert response.status_code == 200, response.data
-    assert any(
-        member["employee"] == org["employee"].pk for member in response.data["members"]
-    ), "the expanded row must show who is assigned"
+    assert any(member["employee"] == org["employee"].pk for member in response.data["members"]), (
+        "the expanded row must show who is assigned"
+    )
 
 
 @pytest.mark.django_db
@@ -292,3 +292,26 @@ def test_an_ordinary_employee_still_sees_only_their_own(auth_client, org, projec
 
     codes = {row["code"] for row in response.data["results"]}
     assert "PRJ-HR3" not in codes
+
+
+@pytest.mark.django_db
+def test_the_total_counts_only_people_still_on_the_team(org, project):
+    """Someone taken off keeps their allocation record, but not in the total."""
+    for person, share in ((org["employee"], "40.00"), (org["peer"], "50.00")):
+        ProjectMember.objects.create(
+            project=project,
+            employee=person,
+            role_in_project="developer",
+            joined_on=project.start_date,
+        )
+        ProjectAllocation.objects.create(
+            project=project,
+            employee=person,
+            allocation_percentage=Decimal(share),
+            start_date=project.start_date,
+        )
+    ProjectMember.objects.filter(project=project, employee=org["peer"]).update(
+        left_on=date(2026, 1, 31)
+    )
+
+    assert project.total_allocation() == Decimal("40.00")
