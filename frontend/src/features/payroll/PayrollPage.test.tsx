@@ -21,7 +21,7 @@ vi.mock('@/features/payroll/SalaryStructuresTab', () => ({
 
 const { default: PayrollPage } = await import('@/features/payroll/PayrollPage');
 
-const ADMIN: PermissionCode[] = ['payroll.view_all', 'payroll.approve'];
+const ADMIN: PermissionCode[] = ['payroll.view_all'];
 const HR: PermissionCode[] = [
   'payroll.view_all',
   'payroll.manage',

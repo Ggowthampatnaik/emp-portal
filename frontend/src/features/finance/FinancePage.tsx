@@ -1,19 +1,14 @@
 /**
  * Finance: releasing payslips for payment.
  *
- * The portal now has two approvals on the same money, which is confusing
- * unless they are named, so this page says both out loud:
+ * HR sends a whole month here. Finance releases it with one click, which pays
+ * everyone and shows them their payslip, or sends it back to HR to be redone.
  *
- *   1. an administrator approves the **run** — is the month's calculation right?
- *   2. HR pushes each **payslip** here, and Finance releases it.
- *
- * Finance has no Reject. A payslip it disagrees with is *queried*, which sends
- * it back to HR with a comment — the same reasoning as HR's send-back on leave.
+ * Finance has no Reject. A payslip already on hold stays held until HR resends it.
  * Nothing on this page can change an amount: Payroll owns the figures.
  */
 
 import CheckIcon from '@mui/icons-material/Check';
-import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -48,9 +43,9 @@ import PayslipBreakdown from '@/features/payroll/PayslipBreakdown';
 import { showToast } from '@/features/ui/uiSlice';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useApiAction, useApiResource } from '@/hooks/useApiResource';
-import { financeApi } from '@/services/api/services';
+import { financeApi, payrollApi } from '@/services/api/services';
 import { money } from '@/utils/format';
-import type { PayslipApproval, PayslipApprovalStatus } from '@/types/domain';
+import type { PayrollRun, PayslipApproval, PayslipApprovalStatus } from '@/types/domain';
 import { formatDate } from '@/utils/date';
 
 const FILTERS: { value: PayslipApprovalStatus | ''; label: string }[] = [
@@ -67,8 +62,6 @@ const STATUS_COLOR: Record<PayslipApprovalStatus, 'default' | 'info' | 'success'
     approved: 'success',
     queried: 'warning',
   };
-
-type Decision = 'release' | 'query';
 
 /** The expanded row: the same breakdown the employee sees on their own payslip. */
 function ApprovalDetail({ approvalId }: { approvalId: number }) {
@@ -100,9 +93,7 @@ export default function FinancePage() {
 
   const [status, setStatus] = useState<string>('processed');
   const [expanded, setExpanded] = useState<number | null>(null);
-  const [dialog, setDialog] = useState<{ row: PayslipApproval; decision: Decision } | null>(
-    null,
-  );
+  const [releasing, setReleasing] = useState<PayslipApproval | null>(null);
   const [comment, setComment] = useState('');
 
   const { data, loading, error, reload } = useApiResource(
@@ -113,29 +104,70 @@ export default function FinancePage() {
     [status],
   );
 
-  const release = useApiAction(financeApi.release);
-  const query = useApiAction(financeApi.query);
-  const busy = release.busy || query.busy;
-  const actionError = release.error ?? query.error;
+  const months = useApiResource(
+    useCallback(
+      () =>
+        mayDecide
+          ? payrollApi.runs({ status: 'with_finance', page_size: 24 })
+          : Promise.resolve({ count: 0, results: [] } as never),
+      [mayDecide],
+    ),
+    [mayDecide],
+  );
+  const [monthDialog, setMonthDialog] = useState<{
+    run: PayrollRun;
+    decision: 'release' | 'back';
+  } | null>(null);
+  const [reason, setReason] = useState('');
 
-  const queryTooShort = dialog?.decision === 'query' && comment.trim().length < 5;
+  const release = useApiAction(financeApi.release);
+  const releaseMonth = useApiAction(payrollApi.releaseMonth);
+  const sendBack = useApiAction(payrollApi.sendBack);
+  const busy = release.busy || releaseMonth.busy || sendBack.busy;
+  const actionError = release.error ?? releaseMonth.error ?? sendBack.error;
+
+  const refresh = () => {
+    void reload();
+    void months.reload();
+  };
+
+  const submitMonth = async () => {
+    if (!monthDialog) return;
+    const { run, decision } = monthDialog;
+    if (decision === 'release') {
+      const done = await releaseMonth.run(run.id);
+      if (done) {
+        dispatch(
+          showToast(
+            `${run.period_label}: ${done.released} released${
+              done.held ? `, ${done.held} held back` : ''
+            }.`,
+            'success',
+          ),
+        );
+      }
+    } else {
+      const done = await sendBack.run(run.id, reason);
+      if (done) dispatch(showToast(`${run.period_label} sent back to HR.`, 'info'));
+    }
+    setMonthDialog(null);
+    setReason('');
+    refresh();
+  };
 
   const submit = async () => {
-    if (!dialog || queryTooShort) return;
-    const run = dialog.decision === 'release' ? release.run : query.run;
-    const updated = await run(dialog.row.id, comment);
+    if (!releasing) return;
+    const updated = await release.run(releasing.id, comment);
     if (updated) {
       dispatch(
         showToast(
-          dialog.decision === 'release'
-            ? `${updated.employee_name}'s pay for ${updated.period_label} released.`
-            : `Query raised on ${updated.employee_name}'s payslip.`,
-          dialog.decision === 'release' ? 'success' : 'info',
+          `${updated.employee_name}'s pay for ${updated.period_label} released.`,
+          'success',
         ),
       );
-      setDialog(null);
+      setReleasing(null);
       setComment('');
-      void reload();
+      refresh();
     }
   };
 
@@ -143,15 +175,57 @@ export default function FinancePage() {
 
   return (
     <>
-      <PageHeader title="Finance" subtitle="Release approved payslips for payment" />
+      <PageHeader title="Finance" subtitle="Release payroll sent by HR" />
 
       <Card>
         <Box sx={{ p: 2 }}>
           <Alert severity="info" sx={{ mb: 2 }}>
-            These payslips have already been approved twice over: an administrator signed off
-            the monthly run, and HR sent each one here. Releasing is the last step before
-            payment — it does not change any amount.
+            HR sends each month here. Release the month to pay everyone, or release one payslip
+            at a time. Neither changes any amount.
           </Alert>
+
+          {months.data?.results.map((run) => (
+            <Stack
+              key={run.id}
+              direction={{ xs: 'column', sm: 'row' }}
+              justifyContent="space-between"
+              alignItems={{ sm: 'center' }}
+              spacing={1}
+              sx={{ mb: 2, p: 2, border: 1, borderColor: 'divider', borderRadius: 1 }}
+            >
+              <Box>
+                <Typography variant="body1" fontWeight={700}>
+                  {run.period_label}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {run.employee_count} payslips · net {money(run.total_net)}
+                  {run.sent_by_name ? ` · sent by ${run.sent_by_name}` : ''}
+                </Typography>
+              </Box>
+              <Stack direction="row" spacing={1}>
+                <Button
+                  variant="outlined"
+                  color="warning"
+                  disabled={busy}
+                  onClick={() => {
+                    setMonthDialog({ run, decision: 'back' });
+                    setReason('');
+                  }}
+                >
+                  Send back to HR
+                </Button>
+                <Button
+                  variant="contained"
+                  color="success"
+                  startIcon={<CheckIcon />}
+                  disabled={busy}
+                  onClick={() => setMonthDialog({ run, decision: 'release' })}
+                >
+                  Release month
+                </Button>
+              </Stack>
+            </Stack>
+          ))}
 
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 2 }}>
             <TextField
@@ -177,7 +251,7 @@ export default function FinancePage() {
           {!loading && rows.length === 0 ? (
             <EmptyState
               title="Nothing waiting on Finance"
-              detail="Payslips appear here once HR has sent them across for release."
+              detail="Payslips appear here once HR has sent the month to Finance."
             />
           ) : (
             <TableContainer sx={{ overflowX: 'auto' }}>
@@ -190,7 +264,7 @@ export default function FinancePage() {
                     <TableCell align="right">Net pay</TableCell>
                     <TableCell>Sent by HR</TableCell>
                     <TableCell>Status</TableCell>
-                    <TableCell align="right">Decision</TableCell>
+                    <TableCell />
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -264,34 +338,19 @@ export default function FinancePage() {
                         </TableCell>
                         <TableCell align="right">
                           {row.awaits_finance ? (
-                            <Stack direction="row" spacing={1} justifyContent="flex-end">
-                              <Button
-                                size="small"
-                                variant="contained"
-                                color="success"
-                                startIcon={<CheckIcon />}
-                                onClick={() => {
-                                  setDialog({ row, decision: 'release' });
-                                  setComment('');
-                                }}
-                                disabled={!mayDecide || busy}
-                              >
-                                Release
-                              </Button>
-                              <Button
-                                size="small"
-                                variant="outlined"
-                                color="warning"
-                                startIcon={<HelpOutlineIcon />}
-                                onClick={() => {
-                                  setDialog({ row, decision: 'query' });
-                                  setComment('');
-                                }}
-                                disabled={!mayDecide || busy}
-                              >
-                                Query
-                              </Button>
-                            </Stack>
+                            <Button
+                              size="small"
+                              variant="contained"
+                              color="success"
+                              startIcon={<CheckIcon />}
+                              onClick={() => {
+                                setReleasing(row);
+                                setComment('');
+                              }}
+                              disabled={!mayDecide || busy}
+                            >
+                              Release
+                            </Button>
                           ) : (
                             <Typography variant="caption" color="text.disabled">
                               {row.approved_by_name ? `by ${row.approved_by_name}` : '—'}
@@ -317,57 +376,86 @@ export default function FinancePage() {
         </Box>
       </Card>
 
-      <Dialog open={Boolean(dialog)} onClose={() => setDialog(null)} fullWidth maxWidth="sm">
-        <ClosableDialogTitle onClose={() => setDialog(null)}>
-          {dialog?.decision === 'release' ? 'Release for payment' : 'Raise a query with HR'}
+      <Dialog
+        open={Boolean(releasing)}
+        onClose={() => setReleasing(null)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <ClosableDialogTitle onClose={() => setReleasing(null)}>
+          Release for payment
         </ClosableDialogTitle>
         <DialogContent>
-          {dialog && (
+          {releasing && (
             <Stack spacing={2} sx={{ pt: 1 }}>
               <Typography variant="body2">
-                {dialog.row.employee_name} · {dialog.row.period_label} ·{' '}
-                <strong>{money(dialog.row.net_pay)}</strong>
+                {releasing.employee_name} · {releasing.period_label} ·{' '}
+                <strong>{money(releasing.net_pay)}</strong>
               </Typography>
-
-              {dialog.decision === 'release' ? (
-                <Alert severity="success">
-                  This confirms the payment goes out. The amount is not changed here.
-                </Alert>
-              ) : (
-                <Alert severity="warning">
-                  The payslip goes back to {dialog.row.processed_by_name ?? 'HR'} with your
-                  question. Finance has no reject — a query keeps it moving.
-                </Alert>
-              )}
-
+              <Alert severity="success">
+                This confirms the payment goes out. The amount is not changed here.
+              </Alert>
               <TextField
-                label={dialog.decision === 'release' ? 'Note' : 'Query'}
+                label="Note"
                 value={comment}
                 onChange={(event) => setComment(event.target.value)}
                 multiline
                 minRows={2}
-                required={dialog.decision === 'query'}
-                error={Boolean(comment) && queryTooShort}
-                helperText={
-                  dialog.decision === 'query'
-                    ? 'Required — say what HR should look at.'
-                    : 'Optional.'
-                }
+                helperText="Optional."
               />
             </Stack>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialog(null)} disabled={busy}>
+          <Button onClick={() => setReleasing(null)} disabled={busy}>
             Cancel
           </Button>
+          <Button variant="contained" color="success" onClick={submit} disabled={busy}>
+            {busy ? 'Saving...' : 'Release'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(monthDialog)}
+        onClose={() => setMonthDialog(null)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <ClosableDialogTitle onClose={() => setMonthDialog(null)}>
+          {monthDialog?.decision === 'release' ? 'Release' : 'Send back'}{' '}
+          {monthDialog?.run.period_label}
+        </ClosableDialogTitle>
+        <DialogContent>
+          {monthDialog?.decision === 'release' ? (
+            <Alert severity="success" sx={{ mt: 1 }}>
+              Everyone in {monthDialog.run.period_label} still waiting is paid and can see their
+              payslip. Any payslip on hold stays held back.
+            </Alert>
+          ) : (
+            <TextField
+              label="What needs correcting?"
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              multiline
+              minRows={2}
+              required
+              fullWidth
+              sx={{ mt: 1 }}
+              error={!reason.trim()}
+              helperText="Required - HR sees this. Not possible once any payslip is released."
+            />
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setMonthDialog(null)}>Cancel</Button>
           <Button
             variant="contained"
-            color={dialog?.decision === 'release' ? 'success' : 'warning'}
-            onClick={submit}
-            disabled={busy || queryTooShort}
+            color={monthDialog?.decision === 'release' ? 'success' : 'warning'}
+            disabled={busy || (monthDialog?.decision === 'back' && !reason.trim())}
+            onClick={() => void submitMonth()}
           >
-            {busy ? 'Saving...' : dialog?.decision === 'release' ? 'Release' : 'Raise query'}
+            {monthDialog?.decision === 'release' ? 'Release month' : 'Send back to HR'}
           </Button>
         </DialogActions>
       </Dialog>

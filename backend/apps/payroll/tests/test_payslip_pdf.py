@@ -13,16 +13,17 @@ import pytest
 from apps.payroll.amounts import number_to_words, rupees_in_words
 from apps.payroll.models import PayrollRun
 from apps.payroll.pdf import payslip_filename, render_payslip_pdf
-from apps.payroll.services import approve_run, process_run
+from apps.payroll.services import process_run
 from conftest import PAYROLL_MONTH as MONTH
 from conftest import PAYROLL_YEAR as YEAR
+from conftest import pay
 
 
 @pytest.fixture
 def published(org, structure, run):
     """A payroll month that has been processed and signed off, so it is visible."""
     process_run(run.pk, org["hr"].user)
-    approve_run(run.pk, org["admin"].user)
+    pay(run, org)
     run.refresh_from_db()
     return run
 
@@ -283,7 +284,7 @@ def test_every_month_of_the_year_names_itself(org, structure):
     for month in range(1, 13):
         run = PayrollRun.objects.create(year=YEAR + 1, month=month)
         process_run(run.pk, org["hr"].user)
-        approve_run(run.pk, org["admin"].user)
+        pay(run, org)
         slip = run.payslips.get(employee=org["employee"])
 
         expected = date(YEAR + 1, month, 1).strftime("%B")

@@ -156,9 +156,8 @@ class PayrollRunSerializer(serializers.ModelSerializer):
     processed_by_name = serializers.CharField(
         source="processed_by.full_name", read_only=True, default=None
     )
-    approved_by_name = serializers.CharField(
-        source="approved_by.full_name", read_only=True, default=None
-    )
+    sent_by_name = serializers.CharField(source="sent_by.full_name", read_only=True, default=None)
+    paid_by_name = serializers.CharField(source="paid_by.full_name", read_only=True, default=None)
     is_locked = serializers.BooleanField(read_only=True)
     is_editable = serializers.BooleanField(read_only=True)
 
@@ -179,8 +178,9 @@ class PayrollRunSerializer(serializers.ModelSerializer):
             "total_net",
             "processed_by_name",
             "processed_at",
-            "approved_by_name",
-            "approved_at",
+            "sent_by_name",
+            "sent_at",
+            "paid_by_name",
             "paid_at",
             "is_locked",
             "is_editable",
@@ -195,8 +195,9 @@ class PayrollRunSerializer(serializers.ModelSerializer):
             "total_net",
             "processed_by_name",
             "processed_at",
-            "approved_by_name",
-            "approved_at",
+            "sent_by_name",
+            "sent_at",
+            "paid_by_name",
             "paid_at",
             "created_at",
         )
@@ -222,8 +223,22 @@ class PayrollRunSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class RunPayslipSerializer(PayslipSerializer):
+    """A payslip under its run, with where it has got to in Finance."""
+
+    finance_status = serializers.SerializerMethodField()
+
+    class Meta(PayslipSerializer.Meta):
+        fields = (*PayslipSerializer.Meta.fields, "finance_status")
+        read_only_fields = fields
+
+    def get_finance_status(self, obj: Payslip) -> str | None:
+        approval = getattr(obj, "finance_approval", None)
+        return approval.status if approval else None
+
+
 class PayrollRunDetailSerializer(PayrollRunSerializer):
-    payslips = PayslipSerializer(many=True, read_only=True)
+    payslips = RunPayslipSerializer(many=True, read_only=True)
 
     class Meta(PayrollRunSerializer.Meta):
         fields = (*PayrollRunSerializer.Meta.fields, "payslips")

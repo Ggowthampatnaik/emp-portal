@@ -218,6 +218,17 @@ def run(db):
     return PayrollRun.objects.create(year=PAYROLL_YEAR, month=PAYROLL_MONTH)
 
 
+def pay(run, org):
+    """HR sends the month and Finance releases it, so employees can see it.
+
+    The services leave roles to the views, so any second person will do here.
+    """
+    from apps.finance.services import release_run, send_run_to_finance
+
+    send_run_to_finance(run.pk, org["hr"].user)
+    release_run(run.pk, org["admin"].user)
+
+
 @pytest.fixture
 def unpaid_leave_type(db):
     return LeaveType.objects.create(

@@ -38,6 +38,7 @@ class ApprovalStatus(models.TextChoices):
 
     DRAFT = "draft", "Draft"
     PENDING = "pending", "Pending"
+    PENDING_HR = "pending_hr", "Pending HR"
     APPROVED = "approved", "Approved"
     REJECTED = "rejected", "Rejected"
     CANCELLED = "cancelled", "Cancelled"
@@ -46,8 +47,8 @@ class ApprovalStatus(models.TextChoices):
 class LeaveStatus(models.TextChoices):
     """Overall state of a leave request.
 
-    Leave is two-stage (decision D1/D2) while timesheets stay single-stage, so
-    this is its own vocabulary rather than an extension of ``ApprovalStatus``.
+    Leave names both of its stages and timesheets only the second, so this is
+    its own vocabulary rather than an extension of ``ApprovalStatus``.
     ``approved``, ``rejected`` and ``cancelled`` keep the same wire values they
     had before the split, so anything filtering on those still works.
     """

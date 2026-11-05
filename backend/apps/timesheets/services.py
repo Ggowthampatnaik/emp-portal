@@ -32,6 +32,7 @@ from apps.timesheets.models import (
 from common.enums import ApprovalStatus, EmploymentStatus
 from common.exceptions import BusinessRuleViolation, WorkflowStateError
 from common.humanize import human_date, human_range
+from common.scoping import employee_profile
 
 logger = logging.getLogger("empportal.timesheets")
 
@@ -152,7 +153,7 @@ def submit_timesheet(timesheet_id: int, actor, comment: str = "") -> Timesheet:
         Timesheet.objects.select_for_update().select_related("employee__user").get(pk=timesheet_id)
     )
 
-    if timesheet.status == ApprovalStatus.PENDING:
+    if timesheet.status in {ApprovalStatus.PENDING, ApprovalStatus.PENDING_HR}:
         raise WorkflowStateError("This timesheet has already been submitted.")
     if timesheet.status == ApprovalStatus.APPROVED:
         raise WorkflowStateError("An approved timesheet cannot be resubmitted.")
@@ -209,6 +210,11 @@ def submit_timesheet(timesheet_id: int, actor, comment: str = "") -> Timesheet:
 
 @transaction.atomic
 def approve_timesheet(timesheet_id: int, actor, comment: str = "") -> Timesheet:
+    """Stage one. Hands the sheet to HR, the same two stages as leave.
+
+    HR hears nothing per sheet: a company files a sheet a week per person, and
+    the queue and its dashboard count say the same without the noise.
+    """
     timesheet = (
         Timesheet.objects.select_for_update().select_related("employee__user").get(pk=timesheet_id)
     )
@@ -218,15 +224,44 @@ def approve_timesheet(timesheet_id: int, actor, comment: str = "") -> Timesheet:
             f"{timesheet.get_status_display().lower()}."
         )
 
-    timesheet.status = ApprovalStatus.APPROVED
+    _decide(timesheet, ApprovalStatus.PENDING_HR, actor, comment)
+    TimesheetApproval.objects.create(
+        timesheet=timesheet, actor=actor, action=TimesheetApproval.Action.APPROVED, comment=comment
+    )
+    return timesheet
+
+
+def _decide(timesheet: Timesheet, status: str, actor, comment: str) -> None:
+    timesheet.status = status
     timesheet.decided_by = actor
     timesheet.decided_at = timezone.now()
     timesheet.decision_comment = comment
     timesheet.save(
         update_fields=["status", "decided_by", "decided_at", "decision_comment", "updated_at"]
     )
+
+
+def _load_with_hr(timesheet_id: int) -> Timesheet:
+    timesheet = (
+        Timesheet.objects.select_for_update().select_related("employee__user").get(pk=timesheet_id)
+    )
+    if timesheet.status != ApprovalStatus.PENDING_HR:
+        raise WorkflowStateError(
+            f"This timesheet is {timesheet.get_status_display().lower()}, not with HR."
+        )
+    return timesheet
+
+
+@transaction.atomic
+def hr_approve_timesheet(timesheet_id: int, actor, comment: str = "") -> Timesheet:
+    """Stage two. This is what locks the week and tells the employee."""
+    timesheet = _load_with_hr(timesheet_id)
+    _decide(timesheet, ApprovalStatus.APPROVED, actor, comment)
     TimesheetApproval.objects.create(
-        timesheet=timesheet, actor=actor, action=TimesheetApproval.Action.APPROVED, comment=comment
+        timesheet=timesheet,
+        actor=actor,
+        action=TimesheetApproval.Action.HR_APPROVED,
+        comment=comment,
     )
 
     notify(
@@ -239,6 +274,50 @@ def approve_timesheet(timesheet_id: int, actor, comment: str = "") -> Timesheet:
         kind=Notification.Kind.TIMESHEET_APPROVED,
         level=Notification.Level.SUCCESS,
         link="/timesheets",
+    )
+    return timesheet
+
+
+@transaction.atomic
+def hr_approve_all(actor) -> int:
+    """Clears HR's queue in one go; a month is around four sheets a person."""
+    profile = employee_profile(actor)
+    waiting = Timesheet.objects.filter(status=ApprovalStatus.PENDING_HR)
+    if profile is not None:
+        waiting = waiting.exclude(employee=profile)  # nobody approves their own
+
+    approved = 0
+    for timesheet_id in waiting.values_list("pk", flat=True):
+        hr_approve_timesheet(timesheet_id, actor)
+        approved += 1
+    return approved
+
+
+@transaction.atomic
+def hr_send_back_timesheet(timesheet_id: int, actor, comment: str = "") -> Timesheet:
+    """HR's disagreement goes to the manager, not the employee, as with leave."""
+    timesheet = _load_with_hr(timesheet_id)
+    if not comment:
+        raise BusinessRuleViolation("Say what the manager should look at again.")
+
+    _decide(timesheet, ApprovalStatus.PENDING, actor, comment)
+    TimesheetApproval.objects.create(
+        timesheet=timesheet,
+        actor=actor,
+        action=TimesheetApproval.Action.SENT_BACK,
+        comment=comment,
+    )
+
+    notify(
+        approver_for(timesheet.employee),
+        title=f"Timesheet sent back: {timesheet.employee.full_name}",
+        message=(
+            f"HR sent back {timesheet.employee.full_name}'s timesheet for the week of "
+            f"{human_date(timesheet.week_start_date)}.\n\nReason: {comment}"
+        ),
+        kind=Notification.Kind.TIMESHEET_REJECTED,
+        level=Notification.Level.WARNING,
+        link="/timesheets/approvals",
     )
     return timesheet
 
@@ -285,7 +364,7 @@ def reject_timesheet(timesheet_id: int, actor, comment: str = "") -> Timesheet:
 # ---------------------------------------------------------------------------
 # Submission tracking (HR)
 # ---------------------------------------------------------------------------
-SUBMITTED_STATES = {ApprovalStatus.PENDING, ApprovalStatus.APPROVED}
+SUBMITTED_STATES = {ApprovalStatus.PENDING, ApprovalStatus.PENDING_HR, ApprovalStatus.APPROVED}
 
 
 def _sheets_for_week(week_monday: date) -> dict[int, Timesheet]:

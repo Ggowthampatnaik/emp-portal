@@ -13,6 +13,7 @@ from apps.projects.models import ProjectAllocation, ProjectMember
 from apps.timesheets.services import (
     approve_timesheet,
     get_or_create_timesheet,
+    hr_approve_timesheet,
     last_completed_week,
     notify_missing_timesheets,
     save_entries,
@@ -120,8 +121,20 @@ def test_a_draft_does_not_count_as_submitted(org, team, past_week):
 
 
 @pytest.mark.django_db
-def test_an_approved_timesheet_counts_as_submitted(org, team, past_week):
+def test_a_sheet_with_hr_counts_as_submitted(org, team, past_week):
     file_timesheet(org["employee"], team, past_week, approve_by=org["manager"].user)
+
+    row = next(
+        r for r in submission_status_by_employee(past_week) if r["employee_code"] == "TRG0005"
+    )
+    assert row["status"] == "pending_hr"
+    assert row["submitted"] is True
+
+
+@pytest.mark.django_db
+def test_an_approved_timesheet_counts_as_submitted(org, team, past_week):
+    sheet = file_timesheet(org["employee"], team, past_week, approve_by=org["manager"].user)
+    hr_approve_timesheet(sheet.pk, org["hr"].user)
 
     row = next(
         r for r in submission_status_by_employee(past_week) if r["employee_code"] == "TRG0005"

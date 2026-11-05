@@ -8,12 +8,9 @@ import pytest
 from apps.leave_management.models import Holiday
 from apps.payroll.models import PayrollRun, Payslip, SalaryStructure
 from apps.payroll.services import (
-    approve_run,
     build_payslip,
-    mark_paid,
     month_working_days,
     process_run,
-    reject_run,
     structure_in_force,
     unpaid_leave_days,
 )
@@ -23,6 +20,7 @@ from common.exceptions import BusinessRuleViolation, WorkflowStateError
 # and Finance tests need the same salary and the same month.
 from conftest import PAYROLL_MONTH as MONTH
 from conftest import PAYROLL_YEAR as YEAR
+from conftest import pay
 
 
 # ---------------------------------------------------------------------------
@@ -275,69 +273,10 @@ def test_a_run_with_nobody_to_pay_is_refused(org, run):
 @pytest.mark.django_db
 def test_an_approved_run_cannot_be_reprocessed(org, structure, run):
     process_run(run.pk, org["hr"].user)
-    approve_run(run.pk, org["admin"].user)
+    pay(run, org)
 
     with pytest.raises(WorkflowStateError, match="no longer be processed"):
         process_run(run.pk, org["hr"].user)
-
-
-# ---------------------------------------------------------------------------
-# Maker-checker
-# ---------------------------------------------------------------------------
-@pytest.mark.django_db
-def test_the_processor_cannot_approve_their_own_run(org, structure, run):
-    process_run(run.pk, org["hr"].user)
-    with pytest.raises(BusinessRuleViolation, match="other than the person who processed"):
-        approve_run(run.pk, org["hr"].user)
-
-
-@pytest.mark.django_db
-def test_an_administrator_approves_and_then_releases(org, structure, run):
-    process_run(run.pk, org["hr"].user)
-
-    approved = approve_run(run.pk, org["admin"].user)
-    assert approved.status == PayrollRun.Status.APPROVED
-    assert approved.is_locked is True
-
-    paid = mark_paid(run.pk, org["admin"].user)
-    assert paid.status == PayrollRun.Status.PAID
-    assert paid.paid_at is not None
-
-
-@pytest.mark.django_db
-def test_a_draft_cannot_be_approved(org, run):
-    with pytest.raises(WorkflowStateError, match="Only a processed run"):
-        approve_run(run.pk, org["admin"].user)
-
-
-@pytest.mark.django_db
-def test_rejection_sends_the_run_back_to_draft(org, structure, run):
-    process_run(run.pk, org["hr"].user)
-    sent_back = reject_run(run.pk, org["admin"].user, "The special allowance is wrong.")
-
-    assert sent_back.status == PayrollRun.Status.DRAFT
-    assert sent_back.processed_by is None
-    assert "special allowance" in sent_back.notes
-
-
-@pytest.mark.django_db
-def test_a_rejection_needs_a_reason(org, structure, run):
-    process_run(run.pk, org["hr"].user)
-    with pytest.raises(BusinessRuleViolation, match="what needs correcting"):
-        reject_run(run.pk, org["admin"].user, "")
-
-
-@pytest.mark.django_db
-def test_releasing_notifies_every_employee_paid(org, structure, run):
-    from apps.notifications.models import Notification
-
-    process_run(run.pk, org["hr"].user)
-    approve_run(run.pk, org["admin"].user)
-    mark_paid(run.pk, org["admin"].user)
-
-    note = Notification.objects.filter(recipient=org["employee"].user).first()
-    assert note is not None
-    assert "Payslip" in note.title
 
 
 # ---------------------------------------------------------------------------
@@ -354,18 +293,9 @@ def test_an_employee_cannot_open_a_payroll_run(auth_client, org, run):
 
 
 @pytest.mark.django_db
-def test_hr_processes_but_cannot_approve(auth_client, org, structure, run):
+def test_hr_processes_a_month(auth_client, org, structure, run):
     client = auth_client(org["hr"])
     assert client.post(f"/api/v1/payroll-runs/{run.pk}/process/", {}).status_code == 200
-    assert client.post(f"/api/v1/payroll-runs/{run.pk}/approve/", {}).status_code == 403
-
-
-@pytest.mark.django_db
-def test_an_administrator_approves_through_the_api(auth_client, org, structure, run):
-    process_run(run.pk, org["hr"].user)
-    response = auth_client(org["admin"]).post(f"/api/v1/payroll-runs/{run.pk}/approve/", {})
-    assert response.status_code == 200, response.data
-    assert response.data["status"] == PayrollRun.Status.APPROVED
 
 
 @pytest.mark.django_db
@@ -375,7 +305,7 @@ def test_payslips_stay_hidden_until_the_run_is_approved(auth_client, org, struct
     client = auth_client(org["employee"])
     assert client.get("/api/v1/payslips/me/").data == []
 
-    approve_run(run.pk, org["admin"].user)
+    pay(run, org)
     rows = client.get("/api/v1/payslips/me/").data
     assert len(rows) == 1
     assert rows[0]["net_pay"] == "60000.00"
@@ -390,7 +320,7 @@ def test_an_employee_cannot_read_a_colleagues_payslip(
         employee=org["peer"], effective_from=date(2024, 1, 1), basic=Decimal("30000")
     )
     process_run(run.pk, org["hr"].user)
-    approve_run(run.pk, org["admin"].user)
+    pay(run, org)
 
     peer_slip = Payslip.objects.get(employee=org["peer"])
     response = auth_client(org["employee"]).get(f"/api/v1/payslips/{peer_slip.pk}/")
@@ -427,7 +357,7 @@ def test_two_runs_cannot_cover_the_same_month(auth_client, org, run):
 @pytest.mark.django_db
 def test_an_approved_run_cannot_be_deleted(auth_client, org, structure, run):
     process_run(run.pk, org["hr"].user)
-    approve_run(run.pk, org["admin"].user)
+    pay(run, org)
 
     # Deleting needs payroll.process, which HR holds.
     response = auth_client(org["hr"]).delete(f"/api/v1/payroll-runs/{run.pk}/")
@@ -447,7 +377,7 @@ def test_a_structure_used_on_a_payslip_cannot_be_deleted(auth_client, org, struc
 def test_a_payslip_keeps_its_amounts_when_the_structure_changes(org, structure, run):
     """History must reconcile: a later raise cannot rewrite a paid payslip."""
     process_run(run.pk, org["hr"].user)
-    approve_run(run.pk, org["admin"].user)
+    pay(run, org)
     slip = Payslip.objects.get(run=run)
     original_net = slip.net_pay
 
@@ -464,7 +394,7 @@ def test_a_manager_lists_only_their_own_payslips(auth_client, org, structure, ru
     report's net pay while the detail endpoint refused the same rows. A manager
     approves their team's leave and hours; their pay is HR's business."""
     process_run(run.pk, actor=org["hr"].user)
-    approve_run(run.pk, actor=org["admin"].user)
+    pay(run, org)
 
     rows = auth_client(org["manager"]).get("/api/v1/payslips/").data["results"]
 

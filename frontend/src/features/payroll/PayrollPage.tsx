@@ -27,14 +27,14 @@ export default function PayrollPage() {
 
   // Payroll runs and By project are not shown to Admin (the company's call):
   // Admin keeps only their own payslips here. Someone who is Admin *and* HR
-  // keeps them, as does Super Admin - who is then the one who approves a run.
+  // keeps them, as does Super Admin.
   const adminOnly = roles.includes(ROLES.ADMIN) && !roles.includes(ROLES.HR) && !isSuperAdmin;
 
   const tabs = [
     { label: 'My payslips', show: true, render: () => <MyPayslipsTab /> },
     {
       label: 'Payroll runs',
-      show: !adminOnly && canAny('payroll.process', 'payroll.approve', 'payroll.view_all'),
+      show: !adminOnly && canAny('payroll.process', 'payroll.view_all'),
       render: () => <PayrollRunsTab />,
     },
     {

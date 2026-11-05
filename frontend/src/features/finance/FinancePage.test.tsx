@@ -11,7 +11,7 @@
  */
 
 import { Provider } from 'react-redux';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -22,14 +22,20 @@ import type { PayslipApproval } from '@/types/domain';
 const approvals = vi.fn();
 const approval = vi.fn();
 const release = vi.fn();
-const queryPayslip = vi.fn();
+const runs = vi.fn();
+const releaseMonth = vi.fn();
+const sendBack = vi.fn();
 
 vi.mock('@/services/api/services', () => ({
   financeApi: {
     approvals: (...args: unknown[]) => approvals(...args),
     approval: (...args: unknown[]) => approval(...args),
     release: (...args: unknown[]) => release(...args),
-    query: (...args: unknown[]) => queryPayslip(...args),
+  },
+  payrollApi: {
+    runs: (...args: unknown[]) => runs(...args),
+    releaseMonth: (...args: unknown[]) => releaseMonth(...args),
+    sendBack: (...args: unknown[]) => sendBack(...args),
   },
 }));
 
@@ -58,6 +64,14 @@ function row(overrides: Partial<PayslipApproval> = {}): PayslipApproval {
 }
 
 /** Signed in as someone who may release. */
+const MONTH = {
+  id: 8,
+  period_label: 'October 2026',
+  employee_count: 17,
+  total_net: '971110.00',
+  sent_by_name: 'Priya Menon',
+};
+
 function renderPage(permissions: string[] = ['finance.view', 'finance.approve']) {
   const store = createStore({
     auth: {
@@ -76,8 +90,8 @@ function renderPage(permissions: string[] = ['finance.view', 'finance.approve'])
 beforeEach(() => {
   vi.clearAllMocks();
   approvals.mockResolvedValue({ count: 1, results: [row()] });
+  runs.mockResolvedValue({ count: 0, results: [] });
   release.mockResolvedValue(row({ status: 'approved', awaits_finance: false }));
-  queryPayslip.mockResolvedValue(row({ status: 'queried', awaits_finance: false }));
 });
 
 describe('FinancePage', () => {
@@ -97,20 +111,57 @@ describe('FinancePage', () => {
     expect(approvals).toHaveBeenCalledWith(expect.objectContaining({ status: 'processed' }));
   });
 
-  it('names both approvals, so nobody confuses them', async () => {
+  it('explains the month and the payslip, and that neither changes an amount', async () => {
     renderPage();
 
-    const notice = await screen.findByText(/approved twice over/i);
-    expect(notice.textContent).toMatch(/administrator signed off the monthly run/i);
-    expect(notice.textContent).toMatch(/HR sent each one here/i);
+    const notice = await screen.findByText(/Release the month to pay everyone/i);
+    expect(notice.textContent).toMatch(/Neither changes any amount/i);
   });
 
-  it('offers Release and Query, and never Reject', async () => {
+  it('releases a whole month with one click', async () => {
+    const user = userEvent.setup();
+    runs.mockResolvedValue({ count: 1, results: [MONTH] });
+    releaseMonth.mockResolvedValue({ released: 17, held: 0, status: 'paid' });
     renderPage();
 
+    await user.click(await screen.findByRole('button', { name: 'Release month' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Release month' }));
+
+    await waitFor(() => expect(releaseMonth).toHaveBeenCalledWith(8));
+  });
+
+  it('will not send a month back without saying why', async () => {
+    const user = userEvent.setup();
+    runs.mockResolvedValue({ count: 1, results: [MONTH] });
+    sendBack.mockResolvedValue({ ...MONTH, status: 'draft' });
+    renderPage();
+
+    await user.click(await screen.findByRole('button', { name: 'Send back to HR' }));
+    const dialog = await screen.findByRole('dialog');
+    const confirm = within(dialog).getByRole('button', { name: 'Send back to HR' });
+    expect(confirm).toBeDisabled();
+
+    await user.type(within(dialog).getByLabelText(/What needs correcting/), 'Wrong allowance.');
+    await user.click(confirm);
+
+    await waitFor(() => expect(sendBack).toHaveBeenCalledWith(8, 'Wrong allowance.'));
+  });
+
+  it('offers a read-only viewer no month to release', async () => {
+    renderPage(['finance.view']);
+
     await screen.findByText('Asha Rao');
-    expect(screen.getByRole('button', { name: /release/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /query/i })).toBeInTheDocument();
+    expect(runs).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Release month' })).not.toBeInTheDocument();
+  });
+
+  it('offers Release, with no Decision heading, Query or Reject', async () => {
+    renderPage();
+
+    expect(await screen.findByRole('button', { name: /^release$/i })).toBeInTheDocument();
+    expect(screen.queryByText('Decision')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /query/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /reject/i })).not.toBeInTheDocument();
   });
 
@@ -133,38 +184,11 @@ describe('FinancePage', () => {
     expect(release).toHaveBeenCalledWith(1, '');
   });
 
-  it('will not raise a query without saying what it is', async () => {
-    const user = userEvent.setup();
-    renderPage();
-
-    await user.click(await screen.findByRole('button', { name: /query/i }));
-    const confirm = screen.getByRole('button', { name: /raise query/i });
-    expect(confirm).toBeDisabled();
-
-    // 'Query' names both the field and the dialog heading; take the field.
-    await user.type(screen.getByRole('textbox'), 'The LOP days look wrong.');
-    expect(confirm).toBeEnabled();
-
-    await user.click(confirm);
-    expect(queryPayslip).toHaveBeenCalledWith(1, 'The LOP days look wrong.');
-  });
-
-  it('explains that a query goes back to HR rather than ending it', async () => {
-    const user = userEvent.setup();
-    renderPage();
-
-    await user.click(await screen.findByRole('button', { name: /query/i }));
-
-    expect(screen.getByText(/goes back to Priya Menon/i)).toBeInTheDocument();
-    expect(screen.getByText(/no reject/i)).toBeInTheDocument();
-  });
-
   it('shows no controls to a read-only Finance account', async () => {
     renderPage(['finance.view']);
 
     await screen.findByText('Asha Rao');
     expect(screen.getByRole('button', { name: /release/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /query/i })).toBeDisabled();
   });
 
   it('shows who released an already-decided payslip', async () => {
@@ -189,7 +213,7 @@ describe('FinancePage', () => {
     approvals.mockResolvedValue({ count: 0, results: [] });
     renderPage();
 
-    expect(await screen.findByText(/once HR has sent them across/i)).toBeInTheDocument();
+    expect(await screen.findByText(/once HR has sent the month/i)).toBeInTheDocument();
   });
 
   // Releasing is the independent check on a payslip its own recipient pushed

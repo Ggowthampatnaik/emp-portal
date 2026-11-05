@@ -113,6 +113,8 @@ class TimesheetApproval(TimeStampedModel):
     class Action(models.TextChoices):
         SUBMITTED = "submitted", "Submitted"
         APPROVED = "approved", "Approved"
+        HR_APPROVED = "hr_approved", "Approved by HR"
+        SENT_BACK = "sent_back", "Sent back by HR"
         REJECTED = "rejected", "Rejected"
         REOPENED = "reopened", "Reopened"
 

@@ -21,6 +21,7 @@ from apps.notifications.models import Notification
 from apps.notifications.services import notify
 from common.enums import EmploymentStatus
 from common.exceptions import BusinessRuleViolation, WorkflowStateError
+from common.utils import lock_own_rows
 
 logger = logging.getLogger("empportal.employees")
 
@@ -97,9 +98,7 @@ def request_account_deletion(employee: Employee, actor, reason: str) -> AccountD
 
 def _load_open(request_id: int) -> AccountDeletionRequest:
     request = (
-        # Lock the request row only: requested_by is nullable, an outer join,
-        # and PostgreSQL refuses FOR UPDATE on the nullable side.
-        AccountDeletionRequest.objects.select_for_update(of=("self",))
+        lock_own_rows(AccountDeletionRequest.objects)
         .select_related("employee__user", "requested_by")
         .get(pk=request_id)
     )

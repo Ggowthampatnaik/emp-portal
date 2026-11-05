@@ -69,7 +69,7 @@ export type PermissionCode =
   | 'payroll.view_all'
   | 'payroll.manage'
   | 'payroll.process'
-  | 'payroll.approve'
+  | 'timesheet.hr_approve'
   | 'payroll.push_to_finance'
   | 'finance.view'
   | 'finance.approve'

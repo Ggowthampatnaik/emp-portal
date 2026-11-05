@@ -180,7 +180,7 @@ export default function MyPayslipsTab() {
                     size="small"
                     variant="outlined"
                     color={detail.data.run_status === 'paid' ? 'success' : 'default'}
-                    label={detail.data.run_status === 'paid' ? 'Paid' : 'Approved'}
+                    label={detail.data.run_status === 'paid' ? 'Paid' : 'Released'}
                   />
                 </Stack>
                 <Button

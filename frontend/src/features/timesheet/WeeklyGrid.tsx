@@ -316,7 +316,9 @@ export default function WeeklyGrid({
         <Alert severity={sheet.status === 'approved' ? 'success' : 'info'} sx={{ mb: 2 }}>
           {sheet.status === 'approved'
             ? `Approved by ${sheet.decided_by_name ?? 'your manager'}. Approved timesheets are locked.`
-            : 'Submitted and awaiting approval. It becomes editable again only if it is returned to you.'}
+            : sheet.status === 'pending_hr'
+              ? 'Approved by your manager and waiting for final approval from HR.'
+              : 'Submitted and awaiting approval. It becomes editable again only if it is returned to you.'}
           {sheet.decision_comment ? ` — ${sheet.decision_comment}` : ''}
         </Alert>
       )}

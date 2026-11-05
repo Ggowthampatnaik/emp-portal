@@ -1,6 +1,10 @@
 /**
  * Timesheet approval queue. Expanding a row shows the per-project breakdown,
  * so the reviewer can see what they are approving without leaving the page.
+ *
+ * Two stages share it: a manager's sheets are `pending`, and those the manager
+ * has approved are `pending_hr`. Returning at the second stage goes back to the
+ * manager rather than the employee, so it is called Send back.
  */
 
 import CheckIcon from '@mui/icons-material/Check';
@@ -29,6 +33,7 @@ import { useAppDispatch } from '@/app/hooks';
 import { EmptyState, ErrorAlert, TableSkeleton } from '@/components/common/Feedback';
 import { showToast } from '@/features/ui/uiSlice';
 import { useApiAction, useApiResource } from '@/hooks/useApiResource';
+import { usePermissions } from '@/hooks/usePermissions';
 import { timesheetsApi } from '@/services/api/services';
 import type { Timesheet, TimesheetListItem } from '@/types/domain';
 import ClosableDialogTitle from '@/components/common/ClosableDialogTitle';
@@ -94,6 +99,7 @@ export default function TimesheetApprovalsTab({
   onChanged: () => void;
 }) {
   const dispatch = useAppDispatch();
+  const { can } = usePermissions();
   const { data, loading, error, reload } = useApiResource(
     useCallback(() => timesheetsApi.pendingApprovals({ page_size: 50 }), []),
     [reloadKey],
@@ -108,8 +114,23 @@ export default function TimesheetApprovalsTab({
 
   const approve = useApiAction(timesheetsApi.approve);
   const reject = useApiAction(timesheetsApi.reject);
-  const busy = approve.busy || reject.busy;
-  const actionError = approve.error ?? reject.error;
+  const approveAll = useApiAction(timesheetsApi.hrApproveAll);
+  const [confirmingAll, setConfirmingAll] = useState(false);
+  const busy = approve.busy || reject.busy || approveAll.busy;
+  const actionError = approve.error ?? reject.error ?? approveAll.error;
+
+  const dialogAtHr = dialog?.sheet.status === 'pending_hr';
+  const returnLabel = dialogAtHr ? 'Send back' : 'Return';
+
+  const handleApproveAll = async () => {
+    const done = await approveAll.run();
+    setConfirmingAll(false);
+    if (done) {
+      dispatch(showToast(`${done.approved} timesheets approved.`, 'success'));
+      void reload();
+      onChanged();
+    }
+  };
 
   const toggle = async (row: TimesheetListItem) => {
     if (expanded === row.id) {
@@ -135,7 +156,13 @@ export default function TimesheetApprovalsTab({
       dispatch(
         showToast(
           `${updated.employee_name}'s timesheet ${
-            dialog.decision === 'approve' ? 'approved' : 'returned'
+            dialog.decision === 'approve'
+              ? dialogAtHr
+                ? 'approved'
+                : 'approved and sent to HR'
+              : dialogAtHr
+                ? 'sent back to the manager'
+                : 'returned'
           }.`,
           dialog.decision === 'approve' ? 'success' : 'info',
         ),
@@ -163,6 +190,20 @@ export default function TimesheetApprovalsTab({
   return (
     <>
       {actionError && <ErrorAlert error={actionError} />}
+      {can('timesheet.hr_approve') &&
+        data.results.some((row) => row.status === 'pending_hr') && (
+          <Stack direction="row" justifyContent="flex-end" sx={{ p: 2 }}>
+            <Button
+              variant="contained"
+              color="success"
+              startIcon={<CheckIcon />}
+              onClick={() => setConfirmingAll(true)}
+              disabled={busy}
+            >
+              Approve all with HR
+            </Button>
+          </Stack>
+        )}
       <TableContainer sx={{ overflowX: 'auto' }}>
         <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 1000 }}>
           <Columns />
@@ -201,6 +242,16 @@ export default function TimesheetApprovalsTab({
                       {row.employee_code}
                       {row.department_name ? ` · ${row.department_name}` : ''}
                     </Typography>
+                    {row.status === 'pending_hr' && (
+                      <Typography variant="caption" color="success.dark" display="block">
+                        Approved by manager
+                      </Typography>
+                    )}
+                    {row.status === 'pending' && row.decision_comment && (
+                      <Typography variant="caption" color="warning.dark" display="block">
+                        Sent back by HR: {row.decision_comment}
+                      </Typography>
+                    )}
                   </TableCell>
                   <TableCell>
                     {formatDateRange(row.week_start_date, row.week_end_date)}
@@ -235,7 +286,7 @@ export default function TimesheetApprovalsTab({
                         }}
                         disabled={busy}
                       >
-                        Return
+                        {row.status === 'pending_hr' ? 'Send back' : 'Return'}
                       </Button>
                     </Stack>
                   </TableCell>
@@ -338,7 +389,11 @@ export default function TimesheetApprovalsTab({
 
       <Dialog open={Boolean(dialog)} onClose={() => setDialog(null)} fullWidth maxWidth="sm">
         <ClosableDialogTitle onClose={() => setDialog(null)}>
-          {dialog?.decision === 'approve' ? 'Approve timesheet' : 'Return for correction'}
+          {dialog?.decision === 'approve'
+            ? 'Approve timesheet'
+            : dialogAtHr
+              ? 'Send back to the manager'
+              : 'Return for correction'}
         </ClosableDialogTitle>
         <DialogContent>
           {dialog && (
@@ -363,7 +418,9 @@ export default function TimesheetApprovalsTab({
               />
               {dialog.decision === 'approve' && (
                 <Typography variant="caption" color="text.secondary">
-                  Approved timesheets are locked and can no longer be edited by the employee.
+                  {dialogAtHr
+                    ? 'Approved timesheets are locked and can no longer be edited by the employee.'
+                    : 'It goes to HR for final approval.'}
                 </Typography>
               )}
             </Stack>
@@ -379,7 +436,36 @@ export default function TimesheetApprovalsTab({
             onClick={submit}
             disabled={busy || (dialog?.decision === 'reject' && !comment.trim())}
           >
-            {busy ? 'Saving...' : dialog?.decision === 'approve' ? 'Approve' : 'Return'}
+            {busy ? 'Saving...' : dialog?.decision === 'approve' ? 'Approve' : returnLabel}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={confirmingAll}
+        onClose={() => setConfirmingAll(false)}
+        fullWidth
+        maxWidth="xs"
+      >
+        <ClosableDialogTitle onClose={() => setConfirmingAll(false)}>
+          Approve all with HR
+        </ClosableDialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            Every timesheet waiting on HR is approved and locked, except any of your own.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmingAll(false)} disabled={busy}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="success"
+            onClick={() => void handleApproveAll()}
+            disabled={busy}
+          >
+            {approveAll.busy ? 'Approving...' : 'Approve all'}
           </Button>
         </DialogActions>
       </Dialog>

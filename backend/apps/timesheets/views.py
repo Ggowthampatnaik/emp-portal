@@ -2,6 +2,7 @@
 
 from datetime import date, datetime, timedelta
 
+from django.db.models import Q
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
@@ -23,6 +24,9 @@ from apps.timesheets.serializers import (
 from apps.timesheets.services import (
     approve_timesheet,
     get_or_create_timesheet,
+    hr_approve_all,
+    hr_approve_timesheet,
+    hr_send_back_timesheet,
     last_completed_week,
     notify_missing_timesheets,
     reject_timesheet,
@@ -144,22 +148,26 @@ class TimesheetViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewset
         )
         return Response(TimesheetSerializer(updated).data)
 
-    def _decide(self, request: Request, transition, audit_action: str) -> Response:
+    def _decide(self, request: Request, manager_stage, hr_stage, audit_action: str) -> Response:
+        """One pair of routes for both stages; the sheet's status says which."""
         timesheet = self.get_object()
-        if not request.user.has_module_permission("timesheet.approve"):
+        at_hr = timesheet.status == ApprovalStatus.PENDING_HR
+        needed = "timesheet.hr_approve" if at_hr else "timesheet.approve"
+        if not request.user.has_module_permission(needed):
             raise PermissionDenied("You do not have permission to decide on timesheets.")
 
         profile = employee_profile(request.user)
         if profile is not None and timesheet.employee_id == profile.pk:
             raise PermissionDenied("You cannot decide on your own timesheet.")
         allowed = approvable_employee_ids(request.user)
-        if allowed is not None and timesheet.employee_id not in allowed:
+        if not at_hr and allowed is not None and timesheet.employee_id not in allowed:
             raise PermissionDenied("This timesheet is not in your approval queue.")
 
         serializer = TimesheetDecisionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         before = timesheet.status
+        transition = hr_stage if at_hr else manager_stage
         updated = transition(timesheet.pk, request.user, serializer.validated_data["comment"])
         record_audit(
             request,
@@ -175,12 +183,29 @@ class TimesheetViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewset
     @extend_schema(request=TimesheetDecisionSerializer, responses={200: TimesheetSerializer})
     @action(detail=True, methods=["post"])
     def approve(self, request: Request, pk: str | None = None) -> Response:
-        return self._decide(request, approve_timesheet, AuditAction.APPROVE)
+        return self._decide(request, approve_timesheet, hr_approve_timesheet, AuditAction.APPROVE)
 
     @extend_schema(request=TimesheetDecisionSerializer, responses={200: TimesheetSerializer})
     @action(detail=True, methods=["post"])
     def reject(self, request: Request, pk: str | None = None) -> Response:
-        return self._decide(request, reject_timesheet, AuditAction.REJECT)
+        return self._decide(request, reject_timesheet, hr_send_back_timesheet, AuditAction.REJECT)
+
+    @extend_schema(request=None, responses={200: dict})
+    @action(detail=False, methods=["post"], url_path="hr-approve-all")
+    def hr_approve_all(self, request: Request) -> Response:
+        """Approves everything waiting on HR, bar the caller's own sheets."""
+        if not request.user.has_module_permission("timesheet.hr_approve"):
+            raise PermissionDenied("You do not have permission to approve timesheets for HR.")
+
+        approved = hr_approve_all(request.user)
+        record_audit(
+            request,
+            AuditAction.APPROVE,
+            None,
+            entity_type="Timesheet",
+            changes={"hr_approved": approved},
+        )
+        return Response({"approved": approved})
 
     # -- queues ------------------------------------------------------------
     @extend_schema(responses={200: TimesheetListSerializer(many=True)})
@@ -205,15 +230,23 @@ class TimesheetViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewset
     @extend_schema(responses={200: TimesheetListSerializer(many=True)})
     @action(detail=False, methods=["get"], url_path="pending-approvals")
     def pending_approvals(self, request: Request) -> Response:
-        if not request.user.has_module_permission("timesheet.approve"):
+        manager_stage = request.user.has_module_permission("timesheet.approve")
+        hr_stage = request.user.has_module_permission("timesheet.hr_approve")
+        if not manager_stage and not hr_stage:
             raise PermissionDenied("You do not have permission to approve timesheets.")
 
-        allowed = approvable_employee_ids(request.user)
-        queryset = Timesheet.objects.filter(status=ApprovalStatus.PENDING).select_related(
+        waiting = Q(pk__in=[])
+        if manager_stage:
+            allowed = approvable_employee_ids(request.user)
+            waiting |= Q(status=ApprovalStatus.PENDING) & (
+                Q() if allowed is None else Q(employee_id__in=allowed)
+            )
+        if hr_stage:
+            waiting |= Q(status=ApprovalStatus.PENDING_HR)
+
+        queryset = Timesheet.objects.filter(waiting).select_related(
             "employee__user", "employee__department"
         )
-        if allowed is not None:
-            queryset = queryset.filter(employee_id__in=allowed)
 
         profile = employee_profile(request.user)
         if profile is not None:

@@ -13,7 +13,7 @@ later change to a salary structure cannot rewrite a payslip that has been paid.
 
 import calendar
 import logging
-from datetime import date
+from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import transaction
@@ -21,12 +21,11 @@ from django.utils import timezone
 
 from apps.employees.models import Employee
 from apps.leave_management.models import LeaveRequest
-from apps.notifications.models import Notification
-from apps.notifications.services import notify
 from apps.payroll.models import PayrollRun, Payslip, SalaryStructure
-from common.enums import EmploymentStatus, LeaveStatus
+from apps.timesheets.models import Timesheet
+from apps.timesheets.services import week_start
+from common.enums import ApprovalStatus, EmploymentStatus, LeaveStatus
 from common.exceptions import BusinessRuleViolation, WorkflowStateError
-from common.humanize import inr
 from common.utils import working_days
 
 logger = logging.getLogger("empportal.payroll")
@@ -200,6 +199,7 @@ def process_run(run_id: int, actor) -> PayrollRun:
     run.status = PayrollRun.Status.PROCESSED
     run.processed_by = actor
     run.processed_at = timezone.now()
+    run.notes = ""  # whatever Finance sent it back for has been dealt with
     run.save()
 
     if skipped:
@@ -212,68 +212,53 @@ def process_run(run_id: int, actor) -> PayrollRun:
     return run
 
 
-@transaction.atomic
-def approve_run(run_id: int, actor) -> PayrollRun:
-    """Locks the run. Separation of duties: the approver is not the processor."""
-    run = PayrollRun.objects.select_for_update().get(pk=run_id)
-    if run.status != PayrollRun.Status.PROCESSED:
-        raise WorkflowStateError(
-            f"Only a processed run can be approved; this one is "
-            f"{run.get_status_display().lower()}."
+def month_weeks(year: int, month: int) -> list[date]:
+    """The Monday of every week with a working day in the month."""
+    start, end = month_bounds(year, month)
+    monday = week_start(start)
+    if start.weekday() > 4:  # the month opens on a weekend, so not that week
+        monday += timedelta(days=7)
+
+    weeks = []
+    while monday <= end:
+        weeks.append(monday)
+        monday += timedelta(days=7)
+    return weeks
+
+
+def unapproved_timesheets(run: PayrollRun) -> list[dict]:
+    """Who is being paid for the month with a week HR has not approved.
+
+    Only ever a warning. Pay does not depend on hours booked, and one late sheet
+    should not hold up everyone's salary. Weeks before someone joined or after
+    they left are not theirs to file.
+    """
+    weeks = month_weeks(run.year, run.month)
+    slips = run.payslips.select_related("employee__user").order_by("employee__employee_code")
+    approved = set(
+        Timesheet.objects.filter(
+            week_start_date__in=weeks,
+            status=ApprovalStatus.APPROVED,
+            employee_id__in=slips.values("employee_id"),
+        ).values_list("employee_id", "week_start_date")
+    )
+
+    missing = []
+    for slip in slips:
+        employee = slip.employee
+        count = sum(
+            1
+            for monday in weeks
+            if monday + timedelta(days=4) >= employee.date_of_joining
+            and (employee.date_of_exit is None or monday <= employee.date_of_exit)
+            and (employee.pk, monday) not in approved
         )
-    if run.processed_by_id and run.processed_by_id == getattr(actor, "pk", None):
-        raise BusinessRuleViolation(
-            "Payroll must be approved by someone other than the person who processed it."
-        )
-
-    run.status = PayrollRun.Status.APPROVED
-    run.approved_by = actor
-    run.approved_at = timezone.now()
-    run.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
-    return run
-
-
-@transaction.atomic
-def reject_run(run_id: int, actor, comment: str) -> PayrollRun:
-    """Sends a processed run back to draft so it can be corrected."""
-    run = PayrollRun.objects.select_for_update().get(pk=run_id)
-    if run.status != PayrollRun.Status.PROCESSED:
-        raise WorkflowStateError("Only a processed run can be sent back.")
-    if not comment:
-        raise BusinessRuleViolation("Say what needs correcting before sending the run back.")
-
-    run.status = PayrollRun.Status.DRAFT
-    run.notes = comment
-    run.processed_by = None
-    run.processed_at = None
-    run.save(update_fields=["status", "notes", "processed_by", "processed_at", "updated_at"])
-    return run
-
-
-@transaction.atomic
-def mark_paid(run_id: int, actor) -> PayrollRun:
-    """Marks an approved run as paid and tells everyone their payslip is ready."""
-    run = PayrollRun.objects.select_for_update().get(pk=run_id)
-    if run.status != PayrollRun.Status.APPROVED:
-        raise WorkflowStateError(
-            f"Only an approved run can be marked paid; this one is "
-            f"{run.get_status_display().lower()}."
-        )
-
-    run.status = PayrollRun.Status.PAID
-    run.paid_at = timezone.now()
-    run.save(update_fields=["status", "paid_at", "updated_at"])
-
-    for slip in run.payslips.select_related("employee__user"):
-        notify(
-            slip.employee.user,
-            title=f"Payslip for {run.period_label}",
-            message=(
-                f"Your payslip for {run.period_label} is available. "
-                f"Net pay: {inr(slip.net_pay)}."
-            ),
-            kind=Notification.Kind.GENERAL,
-            level=Notification.Level.SUCCESS,
-            link="/payroll",
-        )
-    return run
+        if count:
+            missing.append(
+                {
+                    "employee_code": employee.employee_code,
+                    "name": employee.full_name,
+                    "weeks": count,
+                }
+            )
+    return missing

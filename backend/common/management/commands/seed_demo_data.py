@@ -30,7 +30,12 @@ from apps.leave_management.services import (
 )
 from apps.projects.models import Project, ProjectAllocation, ProjectMember
 from apps.timesheets.models import Timesheet, TimesheetEntry
-from apps.timesheets.services import approve_timesheet, submit_timesheet, week_start
+from apps.timesheets.services import (
+    approve_timesheet,
+    hr_approve_timesheet,
+    submit_timesheet,
+    week_start,
+)
 from common.enums import ApprovalStatus, EmploymentStatus, RoleSlug
 
 User = get_user_model()
@@ -730,6 +735,7 @@ class Command(BaseCommand):
                     )
                     if approver:
                         approve_timesheet(timesheet.pk, approver, "Looks good.")
+                        hr_approve_timesheet(timesheet.pk, employees["TRG0002"].user)
             created += 1
 
         self.stdout.write(f"Timesheets: {created}")
@@ -791,7 +797,7 @@ class Command(BaseCommand):
 
         slips = list(
             Payslip.objects.filter(
-                run__status__in=[PayrollRun.Status.APPROVED, PayrollRun.Status.PAID]
+                run__status__in=[PayrollRun.Status.WITH_FINANCE, PayrollRun.Status.PAID]
             ).order_by("employee__employee_code")[:4]
         )
         for index, slip in enumerate(slips):

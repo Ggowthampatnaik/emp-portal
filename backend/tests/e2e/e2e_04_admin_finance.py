@@ -34,115 +34,95 @@ audit = data(rahul.get("/api/v1/admin/audit-logs/", page_size=5))
 check("the audit log loads and has entries", audit.get("count", 0) > 0, str(audit.get("count")))
 
 # ---------------------------------------------------------------------------
-scenario("Admin: approving the payroll run (stage one of pay)")
+scenario("HR sends the month to Finance, with no administrator's approval")
 # ---------------------------------------------------------------------------
-runs = data(rahul.get("/api/v1/payroll-runs/"))
+runs = data(priya.get("/api/v1/payroll-runs/"))
 processed = [r for r in runs.get("results", []) if r["status"] == "processed"]
 if not processed:
     period = date.today() - timedelta(days=430)
     opened = priya.post("/api/v1/payroll-runs/", {"year": period.year, "month": period.month})
     if opened.status_code == 201:
         priya.post(f"/api/v1/payroll-runs/{data(opened)['id']}/process/", {})
-        processed = [data(rahul.get(f"/api/v1/payroll-runs/{data(opened)['id']}/"))]
+        processed = [data(priya.get(f"/api/v1/payroll-runs/{data(opened)['id']}/"))]
 
-check(
-    "there is a processed run for the administrator to judge",
-    bool(processed),
-    str(runs.get("count")),
-)
+check("there is a processed run for HR to send", bool(processed), str(runs.get("count")))
 
 if processed:
     run_id = processed[0]["id"]
-    approved = rahul.post(f"/api/v1/payroll-runs/{run_id}/approve/", {})
     check(
-        "the administrator approves the run", approved.status_code == 200, str(data(approved))[:140]
+        "an administrator has nothing to approve",
+        rahul.post(f"/api/v1/payroll-runs/{run_id}/approve/", {}).status_code == 404,
     )
+    warned = priya.get(f"/api/v1/payroll-runs/{run_id}/timesheet-check/")
+    check("HR can see who has unapproved timesheets", warned.status_code == 200)
+
+    sent = priya.post(f"/api/v1/payroll-runs/{run_id}/send-to-finance/", {})
+    check("HR sends the month", sent.status_code == 200, str(data(sent))[:140])
     check(
-        "the run is now approved",
-        data(approved).get("status") == "approved",
-        str(data(approved).get("status")),
-    )
-    check(
-        "HR cannot approve a run (maker-checker)",
-        priya.post(f"/api/v1/payroll-runs/{run_id}/approve/", {}).status_code in (403, 409),
+        "the month is now with Finance",
+        data(sent).get("status") == "with_finance",
+        str(data(sent).get("status")),
     )
 
 # ---------------------------------------------------------------------------
-scenario("Pay chain: HR pushes a payslip, Finance releases it")
+scenario("Pay chain: Finance releases what HR sent")
 # ---------------------------------------------------------------------------
-slips = data(priya.get("/api/v1/payslips/", page_size=50))
-candidates = [s for s in slips.get("results", []) if s["run_status"] in ("approved", "paid")]
-check("there are payslips out of an approved month", bool(candidates), str(len(candidates)))
-
 released_id = None
-if candidates:
-    slip = candidates[0]
-    pushed = priya.post(f"/api/v1/payslips/{slip['id']}/process/", {})
+queue = data(fatima.get("/api/v1/finance/approvals/", status="processed", page_size=50))
+check("it appears in the Finance queue", queue.get("count", 0) > 0, str(queue.get("count")))
+
+if queue.get("results"):
+    approval = queue["results"][0]
+    released_id = approval["id"]
     check(
-        "HR can send a payslip to Finance",
-        pushed.status_code in (200, 409),
-        str(data(pushed))[:140],
+        "the queue row carries the net and who sent it",
+        approval.get("net_pay") and approval.get("processed_by_name"),
+        str((approval.get("net_pay"), approval.get("processed_by_name"))),
     )
 
-    queue = data(fatima.get("/api/v1/finance/approvals/", status="processed", page_size=50))
-    check("it appears in the Finance queue", queue.get("count", 0) > 0, str(queue.get("count")))
+    detail = data(fatima.get(f"/api/v1/finance/approvals/{released_id}/"))
+    check(
+        "Finance can see the full breakdown before releasing",
+        bool(detail.get("payslip_detail")),
+        str(list(detail)),
+    )
 
-    if queue.get("results"):
-        approval = queue["results"][0]
-        released_id = approval["id"]
-        check(
-            "the queue row carries the net and who sent it",
-            approval.get("net_pay") and approval.get("processed_by_name"),
-            str((approval.get("net_pay"), approval.get("processed_by_name"))),
-        )
+    hr_release = priya.post(f"/api/v1/finance/approvals/{released_id}/approve/", {})
+    check("HR cannot release it themselves", hr_release.status_code == 403)
 
-        detail = data(fatima.get(f"/api/v1/finance/approvals/{released_id}/"))
-        check(
-            "Finance can see the full breakdown before releasing",
-            bool(detail.get("payslip_detail")),
-            str(list(detail)),
-        )
+    queried = fatima.post(
+        f"/api/v1/finance/approvals/{released_id}/query/",
+        {"comment": "The LOP days look wrong - please re-check."},
+    )
+    check("Finance can query it back to HR", queried.status_code == 200, str(data(queried))[:140])
+    check(
+        "a query is not a rejection",
+        data(queried).get("status") == "queried",
+        str(data(queried).get("status")),
+    )
+    check(
+        "a query with no comment is refused",
+        fatima.post(f"/api/v1/finance/approvals/{released_id}/query/", {"comment": ""}).status_code
+        == 400,
+    )
 
-        hr_release = priya.post(f"/api/v1/finance/approvals/{released_id}/approve/", {})
-        check("HR cannot release it themselves", hr_release.status_code == 403)
-
-        queried = fatima.post(
-            f"/api/v1/finance/approvals/{released_id}/query/",
-            {"comment": "The LOP days look wrong - please re-check."},
-        )
-        check(
-            "Finance can query it back to HR", queried.status_code == 200, str(data(queried))[:140]
-        )
-        check(
-            "a query is not a rejection",
-            data(queried).get("status") == "queried",
-            str(data(queried).get("status")),
-        )
-        check(
-            "a query with no comment is refused",
-            fatima.post(
-                f"/api/v1/finance/approvals/{released_id}/query/", {"comment": ""}
-            ).status_code
-            == 400,
-        )
-
-        # HR re-checks and sends it back across.
-        payslip_id = data(queried).get("payslip")
-        priya.post(f"/api/v1/payslips/{payslip_id}/process/", {})
-        released = fatima.post(
-            f"/api/v1/finance/approvals/{released_id}/approve/", {"comment": "Bank file matched."}
-        )
-        check("Finance releases it", released.status_code == 200, str(data(released))[:140])
-        check(
-            "it is marked released",
-            data(released).get("status") == "approved",
-            str(data(released).get("status")),
-        )
-        check(
-            "with the releaser recorded",
-            data(released).get("approved_by_name") == "Fatima Sheikh",
-            str(data(released).get("approved_by_name")),
-        )
+    # HR re-checks and sends it back across.
+    payslip_id = data(queried).get("payslip")
+    priya.post(f"/api/v1/payslips/{payslip_id}/process/", {})
+    released = fatima.post(
+        f"/api/v1/finance/approvals/{released_id}/approve/", {"comment": "Bank file matched."}
+    )
+    check("Finance releases it", released.status_code == 200, str(data(released))[:140])
+    check(
+        "it is marked released",
+        data(released).get("status") == "approved",
+        str(data(released).get("status")),
+    )
+    check(
+        "with the releaser recorded",
+        data(released).get("approved_by_name") == "Fatima Sheikh",
+        str(data(released).get("approved_by_name")),
+    )
 
 # ---------------------------------------------------------------------------
 scenario("Finance: the narrowest role in the portal")

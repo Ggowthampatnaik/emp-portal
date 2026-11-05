@@ -119,15 +119,15 @@ class SalaryStructure(AuditableModel):
 class PayrollRun(TimeStampedModel):
     """One month of payroll, from draft to paid.
 
-    draft -> processed -> approved -> paid, with rejection sending a processed
-    run back to draft. Payslips exist only from ``processed`` onwards, and the
-    run locks once approved.
+    draft -> processed -> with_finance -> paid. HR processes the month and sends
+    it to Finance, whose release pays it; Finance can send it back to draft
+    until the first payslip is released. The run locks once it is with Finance.
     """
 
     class Status(models.TextChoices):
         DRAFT = "draft", "Draft"
         PROCESSED = "processed", "Processed"
-        APPROVED = "approved", "Approved"
+        WITH_FINANCE = "with_finance", "With Finance"
         PAID = "paid", "Paid"
 
     year = models.PositiveSmallIntegerField()
@@ -151,14 +151,21 @@ class PayrollRun(TimeStampedModel):
         related_name="payroll_runs_processed",
     )
     processed_at = models.DateTimeField(null=True, blank=True)
-    approved_by = models.ForeignKey(
+    sent_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
-        related_name="payroll_runs_approved",
+        related_name="payroll_runs_sent",
     )
-    approved_at = models.DateTimeField(null=True, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    paid_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="payroll_runs_paid",
+    )
     paid_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -182,7 +189,7 @@ class PayrollRun(TimeStampedModel):
 
     @property
     def is_locked(self) -> bool:
-        return self.status in {self.Status.APPROVED, self.Status.PAID}
+        return self.status in {self.Status.WITH_FINANCE, self.Status.PAID}
 
 
 # Module-level alias so the OpenAPI enum can be named explicitly in settings.

@@ -10,6 +10,7 @@ from apps.projects.models import Project, ProjectAllocation
 from apps.timesheets.services import (
     approve_timesheet,
     get_or_create_timesheet,
+    hr_approve_timesheet,
     reject_timesheet,
     save_entries,
     submit_timesheet,
@@ -140,6 +141,7 @@ def test_an_approved_sheet_cannot_be_edited(org, allocated_project, past_monday)
     save_entries(sheet, rows(allocated_project, past_monday, 8))
     submit_timesheet(sheet.pk, org["employee"].user)
     approve_timesheet(sheet.pk, org["manager"].user)
+    hr_approve_timesheet(sheet.pk, org["hr"].user)
 
     sheet.refresh_from_db()
     with pytest.raises(WorkflowStateError, match="cannot be edited"):
@@ -166,7 +168,8 @@ def test_submit_then_approve_locks_the_sheet(org, allocated_project, past_monday
     assert submitted.submitted_at is not None
     assert submitted.is_editable is False
 
-    approved = approve_timesheet(sheet.pk, org["manager"].user, "Looks right.")
+    approve_timesheet(sheet.pk, org["manager"].user, "Looks right.")
+    approved = hr_approve_timesheet(sheet.pk, org["hr"].user)
     assert approved.status == ApprovalStatus.APPROVED
     assert approved.is_locked is True
 
@@ -419,7 +422,7 @@ def test_hr_picks_the_sheet_up_once_the_manager_has_approved(
     approve_timesheet(sheet.pk, org["manager"].user)
 
     hr = auth_client(org["hr"])
-    listing = hr.get("/api/v1/timesheets/", {"status": "approved"})
+    listing = hr.get("/api/v1/timesheets/", {"status": "pending_hr"})
     assert listing.status_code == 200
     assert sheet.pk in [row["id"] for row in listing.data["results"]]
 

@@ -41,6 +41,7 @@ export interface ListParams {
 export const APPROVAL_STATUS = {
   DRAFT: 'draft',
   PENDING: 'pending',
+  PENDING_HR: 'pending_hr',
   APPROVED: 'approved',
   REJECTED: 'rejected',
   CANCELLED: 'cancelled',

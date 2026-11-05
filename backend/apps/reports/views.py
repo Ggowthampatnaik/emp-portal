@@ -489,7 +489,12 @@ class DashboardSummaryView(APIView):
                 else LeaveStatus.PENDING_MANAGER
             )
             leave_queue = LeaveRequest.objects.filter(status=leave_stage)
-            sheet_queue = Timesheet.objects.filter(status=ApprovalStatus.PENDING)
+            sheet_stage = (
+                ApprovalStatus.PENDING_HR
+                if user.has_module_permission("timesheet.hr_approve")
+                else ApprovalStatus.PENDING
+            )
+            sheet_queue = Timesheet.objects.filter(status=sheet_stage)
             if allowed is not None:
                 leave_queue = leave_queue.filter(employee_id__in=allowed)
                 sheet_queue = sheet_queue.filter(employee_id__in=allowed)

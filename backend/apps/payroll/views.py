@@ -4,6 +4,7 @@ import csv
 from datetime import date
 from decimal import Decimal
 
+from django.db.models import Q, QuerySet
 from django.http import HttpResponse
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import mixins, viewsets
@@ -13,6 +14,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from apps.finance.models import PayslipApproval
+from apps.finance.services import release_run, send_run_back, send_run_to_finance
 from apps.payroll.models import PayrollRun, Payslip, SalaryStructure
 from apps.payroll.pdf import payslip_filename, render_payslip_pdf
 from apps.payroll.serializers import (
@@ -22,12 +25,24 @@ from apps.payroll.serializers import (
     RunDecisionSerializer,
     SalaryStructureSerializer,
 )
-from apps.payroll.services import approve_run, mark_paid, process_run, reject_run
+from apps.payroll.services import process_run, unapproved_timesheets
 from common.audit import record_audit
 from common.enums import AuditAction
 from common.permissions import HasModulePermission
 from common.scoping import employee_profile
 from common.spreadsheet import safe_row
+
+
+def released(payslips: QuerySet[Payslip]) -> QuerySet[Payslip]:
+    """What an employee may see of their own pay: what Finance has released.
+
+    A month sent to Finance can still come back to HR, so nothing is published
+    on the way there.
+    """
+    return payslips.filter(
+        Q(run__status=PayrollRun.Status.PAID)
+        | Q(finance_approval__status=PayslipApproval.Status.APPROVED)
+    )
 
 
 class SalaryStructureViewSet(viewsets.ModelViewSet):
@@ -110,8 +125,9 @@ class PayrollRunViewSet(
 ):
     """Monthly payroll runs and their workflow.
 
-    Maker-checker: ``payroll.process`` opens and processes a run,
-    ``payroll.approve`` signs it off, and the two cannot be the same person.
+    ``payroll.process`` opens and processes a run,
+    ``payroll.push_to_finance`` sends it to Finance, and ``finance.approve``
+    releases it or sends it back. Whoever sent it cannot release it.
     """
 
     permission_classes = [IsAuthenticated, HasModulePermission]
@@ -123,26 +139,29 @@ class PayrollRunViewSet(
     def required_permissions(self):
         if self.action in ("create", "destroy", "process"):
             return ("payroll.process",)
-        if self.action in ("approve", "reject", "mark_paid"):
-            return ("payroll.approve",)
+        if self.action in ("send_to_finance", "timesheet_check"):
+            return ("payroll.push_to_finance",)
+        if self.action in ("release", "send_back"):
+            return ("finance.approve",)
         return ("payroll.view_all",)
 
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False):
             return PayrollRun.objects.none()
-        queryset = PayrollRun.objects.select_related("processed_by", "approved_by")
+        queryset = PayrollRun.objects.select_related("processed_by", "sent_by", "paid_by")
         if self.action == "retrieve":
             queryset = queryset.prefetch_related(
                 "payslips__employee__user",
                 "payslips__employee__department",
                 "payslips__employee__designation",
+                "payslips__finance_approval",
             )
         return queryset
 
     def get_serializer_class(self):
         if self.action == "retrieve":
             return PayrollRunDetailSerializer
-        if self.action in ("approve", "reject", "mark_paid", "process"):
+        if self.action in ("process", "send_back"):
             return RunDecisionSerializer
         return PayrollRunSerializer
 
@@ -160,48 +179,71 @@ class PayrollRunViewSet(
         record_audit(self.request, AuditAction.DELETE, instance)
         instance.delete()
 
-    def _transition(self, request: Request, transition, audit_action: str, needs_comment=False):
+    @extend_schema(request=RunDecisionSerializer, responses={200: PayrollRunSerializer})
+    @action(detail=True, methods=["post"])
+    def process(self, request: Request, pk: str | None = None) -> Response:
+        """Generates every payslip for the run, replacing any earlier attempt."""
+        run = self.get_object()
+        before = run.status
+        updated = process_run(run.pk, request.user)
+        record_audit(
+            request, AuditAction.SUBMIT, updated, changes={"status": [before, updated.status]}
+        )
+        return Response(PayrollRunSerializer(updated).data)
+
+    @extend_schema(
+        responses={200: dict},
+        description="Who has a week HR has not approved, to warn before sending.",
+    )
+    @action(detail=True, methods=["get"], url_path="timesheet-check")
+    def timesheet_check(self, request: Request, pk: str | None = None) -> Response:
+        return Response({"unapproved": unapproved_timesheets(self.get_object())})
+
+    @extend_schema(request=None, responses={200: PayrollRunSerializer})
+    @action(detail=True, methods=["post"], url_path="send-to-finance")
+    def send_to_finance(self, request: Request, pk: str | None = None) -> Response:
+        """Asks Finance to pay the month. Unapproved timesheets do not stop it."""
+        run = self.get_object()
+        unapproved = len(unapproved_timesheets(run))
+        before = run.status
+        updated = send_run_to_finance(run.pk, request.user)
+        record_audit(
+            request,
+            AuditAction.SUBMIT,
+            updated,
+            changes={
+                "status": [before, updated.status],
+                "employees_with_unapproved_timesheets": unapproved,
+            },
+        )
+        return Response(PayrollRunSerializer(updated).data)
+
+    @extend_schema(request=None, responses={200: dict})
+    @action(detail=True, methods=["post"])
+    def release(self, request: Request, pk: str | None = None) -> Response:
+        """Pays the month. A queried payslip is held and the rest go out."""
+        run = self.get_object()
+        outcome = release_run(run.pk, request.user)
+        record_audit(request, AuditAction.APPROVE, run, changes=outcome)
+        return Response(outcome)
+
+    @extend_schema(request=RunDecisionSerializer, responses={200: PayrollRunSerializer})
+    @action(detail=True, methods=["post"], url_path="send-back")
+    def send_back(self, request: Request, pk: str | None = None) -> Response:
         run = self.get_object()
         serializer = RunDecisionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         comment = serializer.validated_data["comment"]
 
         before = run.status
-        updated = (
-            transition(run.pk, request.user, comment)
-            if needs_comment
-            else transition(run.pk, request.user)
-        )
+        updated = send_run_back(run.pk, request.user, comment)
         record_audit(
             request,
-            audit_action,
+            AuditAction.REJECT,
             updated,
             changes={"status": [before, updated.status], "comment": comment},
         )
         return Response(PayrollRunSerializer(updated).data)
-
-    @extend_schema(request=RunDecisionSerializer, responses={200: PayrollRunSerializer})
-    @action(detail=True, methods=["post"])
-    def process(self, request: Request, pk: str | None = None) -> Response:
-        """Generates every payslip for the run, replacing any earlier attempt."""
-        return self._transition(request, lambda pk, user: process_run(pk, user), AuditAction.SUBMIT)
-
-    @extend_schema(request=RunDecisionSerializer, responses={200: PayrollRunSerializer})
-    @action(detail=True, methods=["post"])
-    def approve(self, request: Request, pk: str | None = None) -> Response:
-        return self._transition(
-            request, lambda pk, user: approve_run(pk, user), AuditAction.APPROVE
-        )
-
-    @extend_schema(request=RunDecisionSerializer, responses={200: PayrollRunSerializer})
-    @action(detail=True, methods=["post"])
-    def reject(self, request: Request, pk: str | None = None) -> Response:
-        return self._transition(request, reject_run, AuditAction.REJECT, needs_comment=True)
-
-    @extend_schema(request=RunDecisionSerializer, responses={200: PayrollRunSerializer})
-    @action(detail=True, methods=["post"], url_path="mark-paid")
-    def mark_paid(self, request: Request, pk: str | None = None) -> Response:
-        return self._transition(request, lambda pk, user: mark_paid(pk, user), AuditAction.UPDATE)
 
     @extend_schema(description="Bank transfer sheet for an approved run, as CSV.")
     @action(detail=True, methods=["get"], url_path="export")
@@ -253,8 +295,8 @@ class PayslipViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
     """Payslips.
 
     An employee sees their own; ``payroll.view_all`` sees everyone's. Payslips
-    only become visible once the run has been approved - a draft calculation is
-    not something to publish.
+    only become visible once Finance has released them - a month on its way
+    there is not something to publish.
     """
 
     serializer_class = PayslipSerializer
@@ -277,15 +319,11 @@ class PayslipViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
         if profile is None:
             return Payslip.objects.none()
 
-        # Everyone else sees their own, and only once payroll is signed off.
+        # Everyone else sees their own, and only once Finance has released it.
         # Their own, not their branch: a manager approves leave and hours for
         # their reports, never sees their pay. `retrieve` and `pdf` already
         # refuse other people's payslips; the list has to agree with them.
-        queryset = queryset.filter(
-            employee=profile,
-            run__status__in=[PayrollRun.Status.APPROVED, PayrollRun.Status.PAID],
-        )
-        return self._filter(queryset)
+        return self._filter(released(queryset.filter(employee=profile)))
 
     def _filter(self, queryset):
         """`?project=`, `?year=` and `?month=`, for the HR drill-down (F14).
@@ -324,10 +362,7 @@ class PayslipViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
             return Response([])
 
         rows = (
-            Payslip.objects.filter(
-                employee=profile,
-                run__status__in=[PayrollRun.Status.APPROVED, PayrollRun.Status.PAID],
-            )
+            released(Payslip.objects.filter(employee=profile))
             .select_related(
                 "run", "employee__user", "employee__department", "employee__designation"
             )
@@ -344,10 +379,7 @@ class PayslipViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
             return Response({})
 
         slip = (
-            Payslip.objects.filter(
-                employee=profile,
-                run__status__in=[PayrollRun.Status.APPROVED, PayrollRun.Status.PAID],
-            )
+            released(Payslip.objects.filter(employee=profile))
             .select_related("run", "employee__user")
             .order_by("-run__year", "-run__month")
             .first()
@@ -369,9 +401,8 @@ class PayslipViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
         request=None,
         responses={200: PayslipSerializer},
         description=(
-            "Push this payslip to Finance for release (`payroll.push_to_finance`). "
-            "The run must already be approved: an administrator signs off the "
-            "month's calculation before individual payslips are released."
+            "Put one payslip back in front of Finance (`payroll.push_to_finance`), "
+            "usually after answering a query. The month has to have been sent."
         ),
     )
     @action(detail=True, methods=["post"], url_path="process")
@@ -420,7 +451,7 @@ class PayslipViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
             profile = employee_profile(request.user)
             if profile is None:
                 return Response({"years": []})
-            rows = self.get_queryset().filter(employee=profile)
+            rows = released(self.get_queryset().filter(employee=profile))
 
         periods: dict[int, list[dict]] = {}
         for slip in rows.order_by("-run__year", "-run__month"):

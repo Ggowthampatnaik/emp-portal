@@ -85,9 +85,9 @@ def test_an_account_already_linked_is_not_claimed_by_a_second_identity(unlinked)
         provision_user_from_claims(claims(oid="eeeeeeee-0000-0000-0000-000000000005"))
 
     unlinked.refresh_from_db()
-    assert (
-        unlinked.entra_object_id == "dddddddd-0000-0000-0000-000000000004"
-    ), "one identity per account; the email match alone is not enough"
+    assert unlinked.entra_object_id == "dddddddd-0000-0000-0000-000000000004", (
+        "one identity per account; the email match alone is not enough"
+    )
 
 
 @pytest.mark.django_db

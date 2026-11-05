@@ -152,7 +152,7 @@ if pending:
     check(
         "the manager can approve a timesheet", decided.status_code == 200, str(decided.status_code)
     )
-    check("an approved sheet is locked", data(decided).get("is_editable") is False)
+    check("it goes to HR, still closed to edits", data(decided).get("is_editable") is False)
 
 # ---------------------------------------------------------------------------
 scenario("Manager: scoping and limits")

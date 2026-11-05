@@ -43,6 +43,7 @@ from apps.notifications.services import notify
 from common.enums import LEAVE_PENDING_STATES, LeaveStageStatus, LeaveStatus
 from common.exceptions import BusinessRuleViolation, WorkflowStateError
 from common.humanize import days_phrase, human_range
+from common.utils import lock_own_rows
 
 logger = logging.getLogger("empportal.leave")
 
@@ -345,9 +346,7 @@ def add_cc_recipients(request: LeaveRequest, user_ids: list[int]) -> list[LeaveR
 
 def _load_for_decision(request_id: int) -> LeaveRequest:
     return (
-        # Lock the request row only. The reporting manager is optional, so it is
-        # an outer join, and PostgreSQL refuses FOR UPDATE on the nullable side.
-        LeaveRequest.objects.select_for_update(of=("self",))
+        lock_own_rows(LeaveRequest.objects)
         .select_related("employee__user", "employee__reporting_manager__user", "leave_type")
         .get(pk=request_id)
     )

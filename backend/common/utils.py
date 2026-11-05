@@ -3,6 +3,8 @@
 from datetime import date, timedelta
 from decimal import Decimal
 
+from django.db import connections
+
 
 def daterange(start: date, end: date):
     """Yields every date from ``start`` to ``end`` inclusive."""
@@ -10,6 +12,17 @@ def daterange(start: date, end: date):
     while current <= end:
         yield current
         current += timedelta(days=1)
+
+
+def lock_own_rows(queryset):
+    """``select_for_update`` that can sit alongside optional ``select_related``.
+
+    PostgreSQL refuses to lock the nullable side of an outer join, so the lock
+    has to name the queryset's own table. MariaDB has no such syntax and no such
+    objection, so it gets the plain form.
+    """
+    features = connections[queryset.db].features
+    return queryset.select_for_update(of=("self",) if features.has_select_for_update_of else ())
 
 
 def working_days(start: date, end: date, holidays: set[date] | None = None) -> int:

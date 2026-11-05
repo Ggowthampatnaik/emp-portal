@@ -19,7 +19,8 @@ import { ROLES } from '@/types/auth';
 
 export default function TimesheetsPage() {
   const { can, roles, isSuperAdmin } = usePermissions();
-  const mayApprove = can('timesheet.approve');
+  // Managers approve first and HR second; the queue shows each their own stage.
+  const mayApprove = can('timesheet.approve') || can('timesheet.hr_approve');
   // The Submissions board is HR's: chasing people who have not filed. Admin can
   // read every sheet too (it backs their timesheet reports) but chases nobody,
   // so the tab is not theirs - unless they also hold HR. Super Admin keeps it.
@@ -29,8 +30,8 @@ export default function TimesheetsPage() {
   /**
    * `/timesheets/approvals` opens the caller's queue rather than this week's
    * grid. The route existed and the dashboard card and every timesheet
-   * notification point at it, but the page ignored the path. A manager lands on
-   * Requests; HR, who tracks rather than approves, lands on Submissions.
+   * notification point at it, but the page ignored the path. It lands on
+   * Requests for anyone who approves, and on Submissions for anyone who only tracks.
    */
   const { pathname } = useLocation();
   const queueTab = mayApprove ? 2 : mayTrack ? 2 : -1;

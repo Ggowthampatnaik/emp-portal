@@ -1,21 +1,21 @@
-"""The Finance module: HR processes a payslip, Finance releases it (F15).
+"""The Finance module, one payslip at a time (F15).
 
-There are now two approvals on the same money, and the whole point of this file
-is that they stay distinct:
-
-* the **run** approval, by an administrator - "is the month's calculation right?"
-* the **payslip** release, by Finance - "should this one be paid out?"
-
-Finance has no reject. A payslip it disagrees with is *queried*, which returns
-it to HR with a comment, exactly like HR's send-back on leave.
+The month as a whole is in `test_month_release.py`. Finance has no reject. A
+payslip it disagrees with is *queried*, which returns it to HR with a comment,
+exactly like HR's send-back on leave.
 """
 
 import pytest
 
 from apps.finance.models import PayslipApproval
-from apps.finance.services import process_payslip, query_payslip, release_payslip
+from apps.finance.services import (
+    process_payslip,
+    query_payslip,
+    release_payslip,
+    send_run_to_finance,
+)
 from apps.notifications.models import Notification
-from apps.payroll.services import approve_run, process_run
+from apps.payroll.services import process_run
 from common.enums import RoleSlug
 from common.exceptions import BusinessRuleViolation, WorkflowStateError
 
@@ -33,8 +33,7 @@ def finance_user(make_user, make_employee):
 @pytest.fixture
 def published(org, structure, run):
     process_run(run.pk, org["hr"].user)
-    approve_run(run.pk, org["admin"].user)
-    return run
+    return send_run_to_finance(run.pk, org["hr"].user)
 
 
 @pytest.fixture
@@ -44,8 +43,8 @@ def slip(published, org):
 
 @pytest.fixture
 def with_finance(slip, org):
-    """HR has pushed the payslip; it is sitting with Finance."""
-    return process_payslip(slip.pk, org["hr"].user)
+    """HR has sent the month; the payslip is sitting with Finance."""
+    return PayslipApproval.objects.get(payslip=slip)
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +52,8 @@ def with_finance(slip, org):
 # ---------------------------------------------------------------------------
 @pytest.mark.django_db
 def test_hr_pushes_a_payslip_to_finance(auth_client, org, slip):
+    PayslipApproval.objects.filter(payslip=slip).update(status=PayslipApproval.Status.PENDING)
+
     response = auth_client(org["hr"]).post(f"/api/v1/payslips/{slip.pk}/process/", {})
 
     assert response.status_code == 200, response.data
@@ -62,12 +63,12 @@ def test_hr_pushes_a_payslip_to_finance(auth_client, org, slip):
 
 
 @pytest.mark.django_db
-def test_the_run_must_be_approved_first(org, structure, run):
-    """Finance is never asked to release money out of an unsigned month."""
-    process_run(run.pk, org["hr"].user)  # processed, not approved
+def test_the_month_must_be_sent_first(org, structure, run):
+    """Payslips reach Finance with their month, not ahead of it."""
+    process_run(run.pk, org["hr"].user)  # processed, not sent
     slip = run.payslips.get(employee=org["employee"])
 
-    with pytest.raises(BusinessRuleViolation, match="not been approved"):
+    with pytest.raises(BusinessRuleViolation, match="not been sent"):
         process_payslip(slip.pk, org["hr"].user)
 
 
@@ -102,7 +103,7 @@ def test_finance_is_notified(org, finance_user, with_finance):
     note = Notification.objects.filter(recipient=finance_user).first()
 
     assert note is not None
-    assert "Payslip to release" in note.title
+    assert "Payroll to release" in note.title
     assert note.link == "/finance"
 
 
@@ -158,7 +159,9 @@ def test_whoever_processed_it_cannot_release_it(org, with_finance, make_user, ma
 
 @pytest.mark.django_db
 def test_a_payslip_not_with_finance_cannot_be_released(finance_user, slip):
-    approval = PayslipApproval.objects.create(payslip=slip)  # still pending with HR
+    approval = PayslipApproval.objects.get(payslip=slip)
+    approval.status = PayslipApproval.Status.PENDING  # still with HR
+    approval.save()
 
     with pytest.raises(WorkflowStateError, match="not with Finance"):
         release_payslip(approval.pk, finance_user)

@@ -651,7 +651,7 @@ export interface NotifyResult {
 }
 
 // --- Payroll ---------------------------------------------------------------
-export type PayrollRunStatus = 'draft' | 'processed' | 'approved' | 'paid';
+export type PayrollRunStatus = 'draft' | 'processed' | 'with_finance' | 'paid';
 
 export interface SalaryStructure {
   id: number;
@@ -725,16 +725,34 @@ export interface PayrollRun {
   total_net: string;
   processed_by_name: string | null;
   processed_at: string | null;
-  approved_by_name: string | null;
-  approved_at: string | null;
+  sent_by_name: string | null;
+  sent_at: string | null;
+  paid_by_name: string | null;
   paid_at: string | null;
   is_locked: boolean;
   is_editable: boolean;
   created_at: string;
 }
 
+export interface RunPayslip extends Payslip {
+  finance_status: PayslipApprovalStatus | null;
+}
+
 export interface PayrollRunDetail extends PayrollRun {
-  payslips: Payslip[];
+  payslips: RunPayslip[];
+}
+
+/** Someone being paid for the month with a week HR has not approved. */
+export interface UnapprovedTimesheets {
+  employee_code: string;
+  name: string;
+  weeks: number;
+}
+
+export interface MonthRelease {
+  released: number;
+  held: number;
+  status: PayrollRunStatus;
 }
 
 // --- Notifications ---------------------------------------------------------

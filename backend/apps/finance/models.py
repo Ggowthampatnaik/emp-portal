@@ -8,10 +8,8 @@ has to know how Finance works - and the release history is auditable in its own
 right rather than being a couple of extra columns on ``Payslip`` that get
 overwritten.
 
-The portal now has two approvals on the same money, which is confusing unless
-they are named: an administrator approves the **run** (is the whole month's
-calculation right?), then HR pushes each **payslip** to Finance, which releases
-it. The UI labels both stages for exactly this reason.
+HR sends a month here with one action, which puts every payslip in the queue;
+Finance then releases the month, or queries one payslip and releases the rest.
 """
 
 from django.conf import settings

@@ -37,6 +37,7 @@ import type {
   LeaveType,
   NotifyResult,
   OrgNode,
+  MonthRelease,
   PayrollRun,
   PayrollRunDetail,
   Payslip,
@@ -59,6 +60,7 @@ import type {
   UpcomingAnniversary,
   UpcomingBirthday,
   WeekSummary,
+  UnapprovedTimesheets,
 } from '@/types/domain';
 
 /** Strips undefined values so they never reach the query string. */
@@ -288,6 +290,7 @@ export const timesheetsApi = {
     http.get<Paginated<TimesheetListItem>>(endpoints.timesheets.pendingApprovals, {
       params: query(params),
     }),
+  hrApproveAll: () => http.post<{ approved: number }>(endpoints.timesheets.hrApproveAll, {}),
   currentWeekSummary: () => http.get<WeekSummary>(endpoints.timesheets.currentWeekSummary),
 
   // HR submission tracking. `week` is any date inside the wanted week; omitted,
@@ -328,10 +331,12 @@ export const payrollApi = {
   deleteRun: (id: number) => http.delete<void>(endpoints.payroll.run(id)),
 
   process: (id: number) => http.post<PayrollRun>(endpoints.payroll.process(id), {}),
-  approve: (id: number) => http.post<PayrollRun>(endpoints.payroll.approve(id), {}),
-  reject: (id: number, comment: string) =>
-    http.post<PayrollRun>(endpoints.payroll.reject(id), { comment }),
-  markPaid: (id: number) => http.post<PayrollRun>(endpoints.payroll.markPaid(id), {}),
+  timesheetCheck: (id: number) =>
+    http.get<{ unapproved: UnapprovedTimesheets[] }>(endpoints.payroll.timesheetCheck(id)),
+  sendToFinance: (id: number) => http.post<PayrollRun>(endpoints.payroll.sendToFinance(id), {}),
+  releaseMonth: (id: number) => http.post<MonthRelease>(endpoints.payroll.release(id), {}),
+  sendBack: (id: number, comment: string) =>
+    http.post<PayrollRun>(endpoints.payroll.sendBack(id), { comment }),
   exportRun: (id: number) =>
     http.get<Blob>(endpoints.payroll.exportRun(id), { responseType: 'blob' }),
 

@@ -29,7 +29,7 @@ import type { LeaveRequest } from '@/types/domain';
 import { formatDate } from '@/utils/date';
 
 /** Column widths, shared by the table and the grid inside an opened request. */
-const COL = { expander: 56, type: '23%', date: '17%', days: '12%', status: '17%' } as const;
+const COL = { expander: 56, type: '21%', date: '15%', days: '10%', status: '15%' } as const;
 
 export default function MyLeaveTab({
   reloadKey,

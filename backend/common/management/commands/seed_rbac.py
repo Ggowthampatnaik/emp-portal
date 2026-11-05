@@ -43,12 +43,12 @@ PERMISSIONS: list[tuple[str, str, str]] = [
     ("timesheet.view_team", "timesheets", "View team timesheets"),
     ("timesheet.view_all", "timesheets", "View all timesheets"),
     ("timesheet.approve", "timesheets", "Approve or reject timesheets"),
+    ("timesheet.hr_approve", "timesheets", "Give HR's final approval on timesheets"),
     ("timesheet.notify", "timesheets", "Send timesheet submission reminders"),
     ("payroll.view_self", "payroll", "View own payslips"),
     ("payroll.view_all", "payroll", "View all payslips"),
     ("payroll.manage", "payroll", "Manage salary structures"),
     ("payroll.process", "payroll", "Open and process payroll runs"),
-    ("payroll.approve", "payroll", "Approve and release payroll"),
     ("payroll.push_to_finance", "payroll", "Send payslips to Finance"),
     ("finance.view", "finance", "See the Finance module"),
     ("finance.approve", "finance", "Release payslips for payment"),
@@ -113,6 +113,7 @@ HR_PERMISSIONS = [
     "leave.cancel_any",
     "leave.manage_policy",
     "timesheet.view_all",
+    "timesheet.hr_approve",
     "timesheet.notify",
     "report.employee",
     "report.leave",
@@ -148,7 +149,6 @@ ADMIN_PERMISSIONS = [
     "admin.system_config",
     "admin.view_audit_log",
     "payroll.view_all",
-    "payroll.approve",
 ]
 
 # Finance releases pay. Beyond its own module it gets only the self-service

@@ -130,7 +130,7 @@ if u and not Employee.objects.filter(user=u).exists():
     note("krishna@trigyan.io removed (no employment record, no payslips)")
 
 print("Payroll runs")
-for run in PayrollRun.objects.filter(year=2025, status="approved"):
+for run in PayrollRun.objects.filter(year=2025, status="with_finance"):
     with transaction.atomic():
         mark_paid(run.pk, actor=rahul)
     note(f"{run.period_label}: marked paid")

@@ -40,7 +40,7 @@ peers; Employee is the base role **every new joiner starts with**.
 | **Employee** | Own profile, apply for leave, submit timesheets, view own payslips, browse the directory |
 | **Manager** | Everything an employee does, plus approving leave and timesheets for their reporting branch, and managing project teams and allocations |
 | **HR** | Org-wide employee records, leave policy and holidays, salary structures, processing payroll, org reports |
-| **Admin** | User accounts and company assets (Administration is deliberately just those two tabs now), roles via the Employees table, project portfolio, **approving payroll** |
+| **Admin** | User accounts and company assets (Administration is deliberately just those two tabs now), roles via the Employees table, project portfolio |
 | **Finance** | Releasing approved payslips to employees, raising queries back to HR |
 | **Super Admin** | Passes every permission check, but the module itself is deliberately trimmed to people governance: an Employees list with an inline role dropdown, and nothing else — no dashboard, org chart, directory tab or add-employee |
 
@@ -98,7 +98,7 @@ All use the password **`Portal@123`**. Created by `manage.py seed_demo_data`.
 | `asha.rao@trigyan.io` | Employee | Own leave/timesheet/payslip, directory |
 | `vikram.nair@trigyan.io` | Manager | Approval queues, team scoping (3 direct reports) |
 | `priya.menon@trigyan.io` | HR | Full directory, leave policy, salary structures, processing payroll |
-| `rahul.iyer@trigyan.io` | Admin | Administration (Users + Assets), onboarding new joiners, deleting accounts, role changes from the Employees table, **approving payroll** |
+| `rahul.iyer@trigyan.io` | Admin | Administration (Users + Assets), onboarding new joiners, deleting accounts, role changes from the Employees table |
 | `fatima.sheikh@trigyan.io` | Finance | The Finance module: releasing payslips, raising queries |
 | `sneha.kulkarni@trigyan.io` | Super Admin | Everything |
 
@@ -369,6 +369,11 @@ apply -> pending_manager -> [manager approves] -> pending_hr -> [HR approves] ->
 - **TimesheetEntry** — hours against one project on one day.
 - **TimesheetApproval** — decision history.
 
+Approval has two stages, like leave: the manager approves (`pending` →
+`pending_hr`), then HR approves (`approved`), which locks the week and tells the
+employee. HR's disagreement goes back to the manager, not the employee, and HR can
+approve its whole queue at once.
+
 Rules: work date must fall inside the sheet's week; ≤24 hours per day; project must
 be allocated; approved sheets are immutable; **every entry needs a task
 description before the sheet can be submitted** (the refusal names the first
@@ -572,7 +577,7 @@ do the same on anyone's record with `employee.edit`.
   conveyance, medical, special) and deductions (PF, professional tax, income tax,
   other). A raise is a **new row**, not an edit; creating one automatically closes
   the previous one the day before.
-- **PayrollRun** — one month: draft → processed → approved → paid.
+- **PayrollRun** — one month: draft → processed → with Finance → paid.
 - **Payslip** — one employee, one run. **Every amount is a snapshot** written at
   processing time, so a later raise can never rewrite a paid month.
 
@@ -583,18 +588,12 @@ out**. Its own app (`apps/finance`), its own role, its own table — so Payroll
 never has to know how Finance works, and the release history is auditable on
 its own.
 
-- **PayslipApproval** — one row per payslip: `pending` → `processed` (HR pushed
-  it) → `approved` (Finance released it), with `queried` as the send-back
-  state. Finance has **no reject**; a payslip it disagrees with goes back to HR
-  with a comment, the same reasoning as HR's leave send-back (D2).
-- **Two approvals now sit on the same money, and they are different things:**
-  an administrator approves the **run** ("is the month's calculation right?"),
-  then HR pushes each **payslip** and Finance releases it ("should this go out
-  now?"). Both the Finance page and the payroll tab label their stage, because
-  an unlabelled queue is how somebody releases pay thinking they are checking
-  arithmetic.
-- A payslip cannot reach Finance until its run is approved, and whoever pushed
-  it cannot be the one who releases it.
+- **PayslipApproval** — one row per payslip: created as `processed` when HR sends
+  the month, then `approved` (Finance released it), with `queried` as the
+  send-back state. Finance has **no reject**; a payslip it disagrees with goes
+  back to HR with a comment, the same reasoning as HR's leave send-back (D2).
+- Finance releases a whole month in one action or one payslip at a time, and
+  whoever sent a month cannot be the one who releases it.
 - Nothing in Finance changes an amount.
 
 **Payslip PDFs** (`apps/payroll/pdf.py`) are ReportLab — pure Python, so
@@ -644,11 +643,11 @@ in words using the **Indian** scale — lakh and crore, not "hundred thousand".
 | `timesheet.submit` / `timesheet.view_self` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `timesheet.view_team` / `timesheet.approve` | ✓ | | | ✓ | |
 | `timesheet.view_all` | ✓ | ✓ | ✓ | | |
+| `timesheet.hr_approve` | ✓ | | ✓ | | |
 | `timesheet.notify` | ✓ | | ✓ | | |
 | `payroll.view_self` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `payroll.view_all` | ✓ | ✓ | ✓ | | |
 | `payroll.manage` / `payroll.process` | ✓ | | ✓ | | |
-| `payroll.approve` | ✓ | ✓ | | | |
 | `payroll.push_to_finance` | ✓ | | ✓ | | |
 | `finance.view` / `finance.approve` | ✓ | | | | |
 | `report.employee` | ✓ | ✓ | ✓ | | |
@@ -718,8 +717,8 @@ leave-types/   leave-balances/ (+ /me), holidays/
 timesheets/    list, me, weekly, current-week-summary, pending-approvals,
                {id}/entries, {id}/submit, {id}/approve, {id}/reject,
                status/by-project, status/by-employee, notify
-payroll-runs/  CRUD, {id}/process, {id}/approve, {id}/reject,
-               {id}/mark-paid, {id}/export
+payroll-runs/  CRUD, {id}/process, {id}/timesheet-check, {id}/send-to-finance,
+               {id}/release, {id}/send-back, {id}/export
 salary-structures/   payslips/ (+ /me, /latest, /periods,
                      {id}/pdf, {id}/process)
                      list filters: ?project= ?year= ?month=
@@ -824,19 +823,26 @@ DRAFT ──submit──→ PENDING ──approve──→ APPROVED (locked)
 - Saving replaces the whole week in one PUT — deletion, edit and add are the same
   operation.
 
-### Payroll (maker–checker)
+### Payroll (HR to Finance)
 
 ```
-DRAFT ──process──→ PROCESSED ──approve──→ APPROVED ──mark-paid──→ PAID
-  ↑                    │
-  └──── reject ────────┘   (requires a comment)
+DRAFT ──process──→ PROCESSED ──send──→ WITH_FINANCE ──release──→ PAID
+  ↑                                        │
+  └──────────── send back (comment) ───────┘
 ```
 
-- **HR processes; an Admin approves. The same person cannot do both** — enforced in
-  `approve_run()`. This is a deliberate financial control.
+- **HR processes and sends; Finance releases.** There is no administrator's
+  approval. Whoever sent a month cannot release it, enforced in `release_run()`.
+- Timesheets the month relies on should have HR's approval first. Sending lists
+  whoever does not, but never blocks: pay does not depend on hours booked.
+- Finance releases the month with one action, or one payslip at a time. A payslip
+  already **queried** is held and the rest go out; the run becomes Paid when its last
+  payslip is released. Raising a new query is API-only: the Finance page has no
+  Query button.
+- Finance can send a month back to HR with a comment until a payslip is released.
 - Processing regenerates every payslip from scratch, so it is safe to re-run after
   a correction.
-- **Payslips are hidden from employees until the run is approved.**
+- **Payslips are hidden from employees until Finance releases them.**
 - Unpaid leave taken in the month becomes LOP days and is deducted pro-rata; leave
   straddling a month boundary is counted per month.
 - **Rounding reconciles:** components are rounded individually then summed, and the
@@ -856,7 +862,7 @@ DRAFT ──process──→ PROCESSED ──approve──→ APPROVED ──mar
 | Fine-grained permission codes, not role checks in views | A custom role composes correctly; roles are just bundles |
 | Separate `/employees/directory/` endpoint | The main employee list is deliberately scoped to self for an employee. Rather than widen it, a narrow directory (work contact details only, no personal data) is readable by everyone |
 | Birthdays expose day and month only | Age is personal; the dashboard is company-wide |
-| Payroll maker–checker | Standard financial control: the processor must not be the approver |
+| Payroll HR to Finance | One separation of duties: whoever sends a month cannot release it |
 | Payslip amounts are snapshots | Last year's payslips must keep reconciling after a raise |
 | Employees deactivated, never deleted | Leave, timesheet and payroll history references them |
 | Projects cancelled, never deleted | Same |
@@ -1089,7 +1095,8 @@ What is left is not features:
 
 ## 17. Open questions for the client
 
-1. Should HR also hold `payroll.approve`, collapsing the maker–checker control?
+1. Should anyone besides Finance check a month before it is released, now that
+   there is no administrator's approval?
 2. Is the company-wide directory acceptable, or should it be restricted to
    managers and HR?
 3. Fiscal/leave year start month, for the annual accrual job.
