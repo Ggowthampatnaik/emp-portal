@@ -2,8 +2,9 @@
  * The Employees page.
  *
  * Everyone lands on the company directory. Users who may see full records
- * (managers, HR, Admin) get a second tab with the management table - server
- * side search, filters, onboarding - scoped to what they are allowed to see.
+ * (managers, Admin) get a second tab with the management table - server side
+ * search, filters, onboarding - scoped to what they are allowed to see. HR and
+ * Super Admin see everyone anyway, so that table is their whole page.
  */
 
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
@@ -74,6 +75,12 @@ export default function EmployeesPage() {
    * their card does not, so neither card offers a way through to one.
    */
   const opensAsCard = adminOversight || isSuperAdmin;
+  /**
+   * HR's scope is the whole company, so the directory beside it would only be
+   * the same people with less to open. The table stays rather than the
+   * directory: it holds inactive staff too, and leads to the full record.
+   */
+  const peopleListOnly = isSuperAdmin || (roles.includes(ROLES.HR) && !adminOversight);
   const [selected, setSelected] = useState<number | null>(null);
   // Latched on the first open, so the dialog's load cycle never runs on a
   // visit that does not use it, and closing keeps its animation.
@@ -164,7 +171,7 @@ export default function EmployeesPage() {
         title="Employees"
         subtitle={
           data
-            ? `${data.count} employee${data.count === 1 ? '' : 's'} in your scope`
+            ? `${data.count} employee${data.count === 1 ? '' : 's'}${peopleListOnly ? '' : ' in your scope'}`
             : 'Directory'
         }
         actions={
@@ -198,9 +205,9 @@ export default function EmployeesPage() {
         }
       />
 
-      {/* Super Admin gets the management table alone - a tab bar with one
-          tab is just furniture, so it goes too. */}
-      {!isSuperAdmin && (
+      {/* The management table alone - a tab bar with one tab is just
+          furniture, so it goes too. */}
+      {!peopleListOnly && (
         <Tabs
           value={tab}
           onChange={(_, next) => setTab(next)}
@@ -211,9 +218,9 @@ export default function EmployeesPage() {
         </Tabs>
       )}
 
-      {tab === 1 && !isSuperAdmin && <DirectoryView />}
+      {tab === 1 && !peopleListOnly && <DirectoryView />}
 
-      {(tab === 0 || isSuperAdmin) && (
+      {(tab === 0 || peopleListOnly) && (
         <>
           {error && <ErrorAlert error={error} onRetry={reload} />}
 

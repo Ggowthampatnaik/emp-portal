@@ -2,7 +2,7 @@
  * Employee profile. Doubles as "My profile" - when no id is in the route it
  * loads /employees/me/. What is editable depends on the caller: Admin may
  * change employment fields, an employee only their own contact details, and HR
- * only the reporting line on anyone else's record.
+ * nothing on anyone else's record.
  */
 
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -128,9 +128,8 @@ export default function EmployeeDetailPage({ self = false }: { self?: boolean })
    */
   const showAssets = !oversightOnly || !isSuperAdmin;
   /**
-   * HR reads the whole of someone else's record but changes only who they
-   * report to and who reports to them - `canEditAll` still drives those two
-   * fields. Their own record is a person looking at their own data, as above.
+   * HR reads the whole of someone else's record and changes none of it. Their
+   * own record is a person looking at their own data, as above.
    */
   const hrViewOnly = !isOwnRecord && !oversightOnly && roles.includes(ROLES.HR);
   const canEdit = (canEditAll || isOwnRecord) && !hrViewOnly;
@@ -396,13 +395,13 @@ export default function EmployeeDetailPage({ self = false }: { self?: boolean })
                 <Field label="Designation" value={data.designation_name} />
                 <ReportingManagerField
                   employee={data}
-                  canManage={canEditAll}
+                  canManage={canEditAll && !hrViewOnly}
                   onChanged={(saved) => setData(saved)}
                 />
                 <DirectReportsField
                   employeeId={data.id}
                   employeeName={data.full_name}
-                  canManage={canEditAll}
+                  canManage={canEditAll && !hrViewOnly}
                   onChanged={(count) => setData({ ...data, direct_report_count: count })}
                 />
                 <Field label="Date of joining" value={formatDate(data.date_of_joining)} />

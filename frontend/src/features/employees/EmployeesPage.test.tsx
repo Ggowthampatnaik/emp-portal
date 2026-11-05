@@ -222,6 +222,29 @@ describe('EmployeesPage, the list layout', () => {
   });
 });
 
+describe('EmployeesPage, the tabs', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    list.mockResolvedValue({ count: 1, next: null, previous: null, results: [ANANYA] });
+  });
+
+  it('gives HR the people list with no tabs, since their scope is everyone', async () => {
+    renderPage(hrUser);
+
+    expect(await screen.findByText(/^\d+ employees?$/)).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'My scope' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Company directory' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Search employees')).toBeInTheDocument();
+  });
+
+  it('keeps both tabs for Admin', async () => {
+    renderPage(adminUser);
+
+    expect(await screen.findByRole('tab', { name: 'My scope' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Company directory' })).toBeInTheDocument();
+  });
+});
+
 describe('EmployeesPage, the caller themselves', () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -8,9 +8,8 @@
  * it, and a Super Admin's own My profile page is a person looking at their own
  * data rather than the module, so it keeps every card too.
  *
- * HR sees all of a record but changes only its reporting line: Change on the
- * manager and Manage on direct reports are the only edit controls they get on
- * someone else's record.
+ * HR sees all of someone else's record and has no edit controls on it at all,
+ * the reporting line included. Admin keeps Change and Manage.
  */
 
 import { MemoryRouter } from 'react-router-dom';
@@ -200,13 +199,16 @@ describe('EmployeeDetailPage', () => {
     }
   });
 
-  it('leaves HR only the reporting line to change on someone else', async () => {
+  it('leaves HR nothing to change on someone else', async () => {
     renderPage(hrUser);
 
     await screen.findByText('Sneha Kulkarni');
+    // Both fields still read, but with no way to change them.
+    expect(screen.getByText('Reporting manager')).toBeInTheDocument();
+    expect(await screen.findByText(/^Direct reports/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^edit$/i })).not.toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: /change/i })).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: /manage/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /change/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /manage/i })).not.toBeInTheDocument();
     for (const card of [...OPERATIONAL, 'Photo']) {
       expect(await screen.findByText(card)).toHaveAttribute('data-may-change', 'false');
     }
@@ -223,10 +225,12 @@ describe('EmployeeDetailPage', () => {
     );
   });
 
-  it('leaves an Admin the Edit button on someone else', async () => {
+  it('leaves an Admin the Edit button and the reporting line on someone else', async () => {
     renderPage(adminUser);
 
     expect(await screen.findByRole('button', { name: /^edit$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /change/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /manage/i })).toBeInTheDocument();
   });
 
   it('gives an employee the whole of their own record', async () => {
