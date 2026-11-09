@@ -78,7 +78,6 @@ EMPLOYEE_PERMISSIONS = [
 MANAGER_PERMISSIONS = [
     *EMPLOYEE_PERMISSIONS,
     "employee.view_team",
-    "project.view_all",
     "project.assign_team",
     "project.allocate",
     "leave.view_team",

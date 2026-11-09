@@ -159,10 +159,11 @@ export default function EmployeeDetailsDialog({ employeeId, onClose, onNavigate 
 
               <Divider />
 
-              {/* Two per row on anything wider than a phone, filled left then right so
-                  both columns carry the same number of details - related pairs
-                  side by side - and the odd one out alone on the last row. One
-                  column on a phone, in the same order. */}
+              {/* Two per row on anything wider than a phone, filled left then right,
+                  related pairs side by side. Direct reports go last, on a row of
+                  their own: beside another detail, a long list left a gap under
+                  its neighbour as tall as the list. One column on a phone, in the
+                  same order. */}
               <Box
                 sx={{
                   display: 'grid',
@@ -242,63 +243,6 @@ export default function EmployeeDetailsDialog({ employeeId, onClose, onNavigate 
                   )}
                 </DetailRow>
 
-                <DetailRow icon={GroupsIcon} label="Direct reports">
-                  {data.direct_reports.length === 0 ? (
-                    'None'
-                  ) : (
-                    <Stack spacing={0.5} sx={{ mt: 0.5 }}>
-                      {data.direct_reports.map((report) => (
-                        <Stack
-                          key={report.id}
-                          direction="row"
-                          spacing={1}
-                          alignItems="center"
-                          component="button"
-                          type="button"
-                          onClick={() => onNavigate(report.id)}
-                          sx={{
-                            background: 'none',
-                            border: 0,
-                            p: 0.5,
-                            borderRadius: 1,
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                            '&:hover': { bgcolor: 'action.hover' },
-                          }}
-                        >
-                          <Avatar
-                            src={report.photo_url ?? undefined}
-                            alt={report.full_name}
-                            sx={{
-                              width: 26,
-                              height: 26,
-                              fontSize: 12,
-                              bgcolor: 'primary.light',
-                            }}
-                          >
-                            {report.full_name[0]?.toUpperCase()}
-                          </Avatar>
-                          {/* Name over title, so a long title never splits the name
-                              across two lines in the narrow right-hand column. */}
-                          <Box sx={{ minWidth: 0 }}>
-                            <Typography variant="body2" noWrap>
-                              {report.full_name}
-                            </Typography>
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                              noWrap
-                              display="block"
-                            >
-                              {report.designation_name ?? report.employee_code}
-                            </Typography>
-                          </Box>
-                        </Stack>
-                      ))}
-                    </Stack>
-                  )}
-                </DetailRow>
-
                 <DetailRow icon={CalendarMonthIcon} label="Date of joining">
                   {formatDate(data.date_of_joining)}
                   {tenure(data.date_of_joining) && (
@@ -307,6 +251,74 @@ export default function EmployeeDetailsDialog({ employeeId, onClose, onNavigate 
                     </Typography>
                   )}
                 </DetailRow>
+
+                <Box sx={{ gridColumn: '1 / -1' }}>
+                  <DetailRow icon={GroupsIcon} label="Direct reports">
+                    {data.direct_reports.length === 0 ? (
+                      'None'
+                    ) : (
+                      // One under another, in the order given (by first name).
+                      <Box
+                        sx={{
+                          mt: 0.5,
+                          display: 'grid',
+                          gridTemplateColumns: '1fr',
+                          justifyItems: 'start',
+                          rowGap: 0.5,
+                        }}
+                      >
+                        {data.direct_reports.map((report) => (
+                          <Stack
+                            key={report.id}
+                            direction="row"
+                            spacing={1}
+                            alignItems="center"
+                            component="button"
+                            type="button"
+                            onClick={() => onNavigate(report.id)}
+                            sx={{
+                              background: 'none',
+                              border: 0,
+                              p: 0.5,
+                              borderRadius: 1,
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                              '&:hover': { bgcolor: 'action.hover' },
+                            }}
+                          >
+                            <Avatar
+                              src={report.photo_url ?? undefined}
+                              alt={report.full_name}
+                              sx={{
+                                width: 26,
+                                height: 26,
+                                fontSize: 12,
+                                bgcolor: 'primary.light',
+                              }}
+                            >
+                              {report.full_name[0]?.toUpperCase()}
+                            </Avatar>
+                            {/* Name over title, so a long title never splits the name
+                              across two lines in the narrow right-hand column. */}
+                            <Box sx={{ minWidth: 0 }}>
+                              <Typography variant="body2" noWrap>
+                                {report.full_name}
+                              </Typography>
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                noWrap
+                                display="block"
+                              >
+                                {report.designation_name ?? report.employee_code}
+                              </Typography>
+                            </Box>
+                          </Stack>
+                        ))}
+                      </Box>
+                    )}
+                  </DetailRow>
+                </Box>
               </Box>
             </Stack>
           )}

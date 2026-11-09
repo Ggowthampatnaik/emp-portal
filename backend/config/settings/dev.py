@@ -30,6 +30,10 @@ if env.bool("USE_SQLITE", default=False):
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": BASE_DIR / "db.sqlite3",
             "ATOMIC_REQUESTS": True,
+            # Emails are sent on a background thread, which writes too. A request
+            # that read first and wrote later would fail at once with "database
+            # is locked"; taking the lock up front means it waits its turn.
+            "OPTIONS": {"transaction_mode": "IMMEDIATE", "timeout": 20},
         }
     }
 

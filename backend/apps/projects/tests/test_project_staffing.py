@@ -137,6 +137,7 @@ def test_nobody_can_be_allocated_past_a_hundred_percent(auth_client, org, projec
         code="PRJ-002",
         name="Second Project",
         department=department,
+        project_manager=org["manager"],
         status=Project.Status.ACTIVE,
         start_date=project.start_date,
     )

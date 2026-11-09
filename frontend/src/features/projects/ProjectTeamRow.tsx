@@ -154,11 +154,11 @@ export default function ProjectTeamRow({ projectId }: { projectId: number }) {
           <TableHead>
             <TableRow>
               <TableCell sx={{ ...INDENT_SX, width: TEAM_COLUMNS.indent }} />
-              <TableCell sx={{ width: TEAM_COLUMNS.employee }}>Employee</TableCell>
+              <TableCell>Employee</TableCell>
               <TableCell sx={{ width: TEAM_COLUMNS.role }}>Role on project</TableCell>
               <TableCell sx={{ width: TEAM_COLUMNS.allocation }}>Allocation</TableCell>
               <TableCell sx={{ width: TEAM_COLUMNS.start }}>Start</TableCell>
-              <TableCell />
+              <TableCell sx={{ width: TEAM_COLUMNS.actions }} />
             </TableRow>
           </TableHead>
           <TableBody>
@@ -254,6 +254,8 @@ export default function ProjectTeamRow({ projectId }: { projectId: number }) {
       {allocating && (
         <AddAllocationDialog
           projectId={projectId}
+          members={members}
+          allocations={allocations}
           onClose={() => setAllocating(false)}
           onSaved={() => {
             setAllocating(false);

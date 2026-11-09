@@ -34,6 +34,7 @@ from apps.timesheets.services import (
     submission_status_by_employee,
     submission_status_by_project,
     submit_timesheet,
+    tracking_week,
     week_start,
 )
 from common.audit import record_audit
@@ -263,14 +264,14 @@ class TimesheetViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewset
 
     # -- HR submission tracking -------------------------------------------
     def _requested_week(self, request: Request) -> date:
-        """The week under review: the one asked for, else the last completed one."""
+        """The week under review: the one asked for, else the one HR is working on."""
         raw = request.query_params.get("week")
         if raw:
             try:
                 return week_start(datetime.strptime(raw, "%Y-%m-%d").date())
             except ValueError as exc:
                 raise ValidationError({"week": ["Use YYYY-MM-DD."]}) from exc
-        return last_completed_week()
+        return tracking_week()
 
     def _require_view_all(self, request: Request) -> None:
         if not request.user.has_module_permission("timesheet.view_all"):

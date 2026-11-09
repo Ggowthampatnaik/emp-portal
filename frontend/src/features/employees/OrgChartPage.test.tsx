@@ -8,17 +8,25 @@
  * toggle and a global command disagree.
  */
 
+import { Provider } from 'react-redux';
 import { MemoryRouter } from 'react-router-dom';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createStore } from '@/app/store';
+import { setUser } from '@/features/auth/authSlice';
+import { makeUser } from '@/test/fixtures';
 import type { OrgNode } from '@/types/domain';
 
 const orgChart = vi.fn();
+const directoryEntry = vi.fn();
 
 vi.mock('@/services/api/services', () => ({
-  employeesApi: { orgChart: (...args: unknown[]) => orgChart(...args) },
+  employeesApi: {
+    orgChart: (...args: unknown[]) => orgChart(...args),
+    directoryEntry: (...args: unknown[]) => directoryEntry(...args),
+  },
 }));
 
 const { default: OrgChartPage } = await import('@/features/employees/OrgChartPage');
@@ -52,10 +60,17 @@ const TREE: OrgNode[] = [
 ];
 
 function renderPage() {
+  // An ordinary employee: the person a link to the full record used to fail.
+  const store = createStore();
+  store.dispatch(
+    setUser(makeUser({ roles: ['employee'], permissions: ['employee.view_self'] })),
+  );
   render(
-    <MemoryRouter>
-      <OrgChartPage />
-    </MemoryRouter>,
+    <Provider store={store}>
+      <MemoryRouter>
+        <OrgChartPage />
+      </MemoryRouter>
+    </Provider>,
   );
 }
 
@@ -65,12 +80,10 @@ beforeEach(() => {
 });
 
 describe('OrgChartPage', () => {
-  it('counts everyone in the visible tree', async () => {
+  it('counts everyone in the company', async () => {
     renderPage();
 
-    expect(
-      await screen.findByText(/5 people in your visible reporting tree/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/5 people in the company/i)).toBeInTheDocument();
   });
 
   it('shows the top of the tree and their direct reports', async () => {
@@ -160,13 +173,29 @@ describe('OrgChartPage', () => {
     expect(screen.getByText('Asha Rao')).toBeInTheDocument();
   });
 
-  it('links each person to their profile', async () => {
+  it("opens a person's details over the chart, not their full record", async () => {
+    const user = userEvent.setup();
+    directoryEntry.mockResolvedValue({
+      id: 1,
+      employee_code: 'TRG0001',
+      full_name: 'Sneha Kulkarni',
+      email: 'sneha.kulkarni@trigyan.io',
+      designation_name: 'Chief Executive',
+      department_name: 'Engineering',
+      photo_url: null,
+      reporting_manager: null,
+      reporting_manager_name: null,
+      phone: '',
+      direct_reports: [],
+    });
     renderPage();
 
-    expect(await screen.findByRole('link', { name: 'Sneha Kulkarni' })).toHaveAttribute(
-      'href',
-      '/employees/1',
-    );
+    await user.click(await screen.findByRole('button', { name: 'Sneha Kulkarni' }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(directoryEntry).toHaveBeenCalledWith(1);
+    expect(await within(dialog).findByText('sneha.kulkarni@trigyan.io')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Sneha Kulkarni' })).not.toBeInTheDocument();
   });
 
   it('says so when there is nothing to chart', async () => {
@@ -186,6 +215,72 @@ describe('OrgChartPage', () => {
     expect(await screen.findByText(/2 top-level people/i)).toBeInTheDocument();
   });
 
+  it('leaves someone with no manager and no reports off the chart', async () => {
+    orgChart.mockResolvedValue([
+      person(1, 'Sneha Kulkarni', 'Director', [person(2, 'Rahul Iyer', 'Manager')]),
+      person(3, 'Gowtham G', null),
+    ]);
+    renderPage();
+
+    await screen.findByText('Rahul Iyer');
+
+    expect(screen.queryByText('Gowtham G')).not.toBeInTheDocument();
+    expect(screen.queryByText(/No manager assigned/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/top-level people/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/2 people in the company/)).toBeInTheDocument();
+  });
+
+  const card = (name: string) => screen.getByText(name).closest('.MuiPaper-root')!;
+
+  it('stacks reports with nobody under them, without the empty toggle row', async () => {
+    orgChart.mockResolvedValue([
+      person(1, 'Vikram Nair', 'Manager', [
+        person(2, 'Asha Rao', 'Engineer'),
+        person(3, 'Karthik Reddy', 'Engineer'),
+      ]),
+    ]);
+    renderPage();
+
+    await screen.findByText('Asha Rao');
+
+    expect(card('Asha Rao').querySelector('.MuiButton-root')).toBeNull();
+    expect(card('Karthik Reddy').querySelector('.MuiButton-root')).toBeNull();
+  });
+
+  it('stacks them beside a colleague who has a team', async () => {
+    orgChart.mockResolvedValue([
+      person(1, 'Sneha Kulkarni', 'Director', [
+        person(2, 'Rahul Iyer', 'Manager', [person(4, 'Meera Joshi', 'Lead')]),
+        person(3, 'Rohan Desai', 'Manager'),
+        person(5, 'Rao Adapa', 'Manager'),
+      ]),
+    ]);
+    renderPage();
+
+    await screen.findByText('Rohan Desai');
+
+    expect(card('Rahul Iyer').querySelector('.MuiButton-root')).not.toBeNull();
+    expect(card('Rohan Desai').querySelector('.MuiButton-root')).toBeNull();
+    expect(card('Rao Adapa').querySelector('.MuiButton-root')).toBeNull();
+  });
+
+  it('keeps one person beside a colleague in the row, the same height', async () => {
+    orgChart.mockResolvedValue([
+      person(1, 'Sneha Kulkarni', 'Director', [
+        person(2, 'Rahul Iyer', 'Manager', [person(4, 'Meera Joshi', 'Lead')]),
+        person(3, 'Rohan Desai', 'Manager'),
+      ]),
+    ]);
+    renderPage();
+
+    await screen.findByText('Rohan Desai');
+
+    expect(card('Rohan Desai').querySelector('.MuiButton-root')).toHaveAttribute(
+      'aria-hidden',
+      'true',
+    );
+  });
+
   it('offers a retry when the tree cannot be loaded', async () => {
     orgChart.mockRejectedValue({
       code: 'network_error',
@@ -202,19 +297,16 @@ describe('OrgChartPage', () => {
   it('reserves the toggle row on a card with nobody under it', async () => {
     // A leaf card used to be a button-row shorter than the manager beside it,
     // so a line of siblings came out ragged. The row is now always there.
-    const user = userEvent.setup();
     renderPage();
 
-    // Karthik is a leaf under Vikram, so open that branch to see them together.
-    await user.click(await screen.findByRole('button', { name: /2 reports/i }));
-
-    const leaf = (await screen.findByText('Karthik Reddy')).closest('.MuiPaper-root');
+    // Priya has nobody under them, beside Vikram who does.
+    const leaf = (await screen.findByText('Priya Menon')).closest('.MuiPaper-root');
     const manager = screen.getByText('Vikram Nair').closest('.MuiPaper-root');
 
     expect(leaf).not.toBeNull();
     expect(manager).not.toBeNull();
     // Present in the layout, absent from the accessibility tree, and inert.
-    const spacer = leaf!.querySelector('button');
+    const spacer = leaf!.querySelector('.MuiButton-root');
     expect(spacer).not.toBeNull();
     expect(spacer).toHaveAttribute('aria-hidden', 'true');
     expect(spacer).toHaveAttribute('tabindex', '-1');

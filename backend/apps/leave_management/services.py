@@ -24,7 +24,7 @@ overlapping requests cannot both pass the availability check.
 import logging
 import re
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import transaction
 from django.utils import timezone
@@ -48,6 +48,8 @@ from common.utils import lock_own_rows
 logger = logging.getLogger("empportal.leave")
 
 HALF = Decimal("0.5")
+#: Joining on or before this day of the month earns leave for that month.
+PRORATA_CUTOFF_DAY = 15
 
 
 # ---------------------------------------------------------------------------
@@ -121,21 +123,58 @@ def revoke_ineligible_balances(employee: Employee) -> int:
     return removed
 
 
+def entitlement_for(employee: Employee, leave_type: LeaveType, year: int) -> Decimal:
+    """Days of this leave the employee gets for the year.
+
+    The year someone joins, paid leave is pro-rated by the months left in it,
+    counting the month they joined if that was on or before the 15th. Rounded to
+    the nearest half day, the smallest leave anyone can take. Every later year
+    is the full amount.
+
+    Unpaid leave is an allowance rather than something earned, and maternity
+    leave is a fixed entitlement however long someone has been here, so neither
+    is reduced.
+    """
+    full = leave_type.days_per_year
+    joined = employee.date_of_joining
+    if year != joined.year or not leave_type.is_paid or leave_type.restricted_to_gender:
+        return full
+
+    months = 12 - joined.month + (1 if joined.day <= PRORATA_CUTOFF_DAY else 0)
+    return (full * months / 12 * 2).quantize(Decimal("1"), rounding=ROUND_HALF_UP) / 2
+
+
 def get_or_create_balance(employee: Employee, leave_type: LeaveType, year: int) -> LeaveBalance:
+    allocated = entitlement_for(employee, leave_type, year)
     balance, created = LeaveBalance.objects.get_or_create(
         employee=employee,
         leave_type=leave_type,
         year=year,
-        defaults={"allocated_days": leave_type.days_per_year},
+        defaults={"allocated_days": allocated},
     )
     if created:
         logger.info(
             "Opened %s balance for %s (%s days)",
             leave_type.code,
             employee.employee_code,
-            leave_type.days_per_year,
+            allocated,
         )
     return balance
+
+
+def open_balances(employee: Employee, year: int) -> None:
+    """Opens whatever the employee is entitled to and does not have yet.
+
+    Balances are opened on first sight rather than when someone joins, so every
+    place that reports on them has to come through here first. A dashboard that
+    only read the rows said a new joiner had no leave at all until they happened
+    to open the Leave page. A gender-restricted type (maternity leave) does not
+    exist for anyone it excludes, so no balance is opened for them.
+    """
+    held = LeaveBalance.objects.filter(employee=employee, year=year).values("leave_type_id")
+    for leave_type in LeaveType.objects.filter(is_active=True).exclude(pk__in=held):
+        if leave_type.available_to(employee):
+            get_or_create_balance(employee, leave_type, year)
 
 
 def _locked_balance(employee_id: int, leave_type_id: int, year: int) -> LeaveBalance:

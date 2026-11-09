@@ -5,9 +5,9 @@
  * team's week accounted for?) and by employee (the compliance view: who is
  * behind?). Either way the action is the same: nudge whoever has not submitted.
  *
- * The week defaults to the last completed one, which is what HR chases; the
- * backend applies the same default when no week is sent, so navigating with the
- * arrows is the only reason this component tracks a week at all.
+ * With no week sent the backend picks one: the last completed week, which is
+ * what HR chases, or the current week as soon as anyone has submitted for it.
+ * Navigating with the arrows is the only reason this component tracks a week.
  */
 
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
@@ -218,7 +218,8 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
   const mayNotify = can('timesheet.notify');
 
   const [view, setView] = useState(0);
-  const [week, setWeek] = useState(lastCompletedWeek);
+  // Null is the backend's choice; the week it chose comes back with the data.
+  const [week, setWeek] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<number | null>(null);
   const toggleProject = (id: number) => setExpanded((open) => (open === id ? null : id));
@@ -241,11 +242,11 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
         .every((row) => nudged.has(row.employee_id)));
 
   const byProject = useApiResource(
-    useCallback(() => timesheetsApi.statusByProject(week), [week]),
+    useCallback(() => timesheetsApi.statusByProject(week ?? undefined), [week]),
     [week, reloadKey],
   );
   const byEmployee = useApiResource(
-    useCallback(() => timesheetsApi.statusByEmployee(week), [week]),
+    useCallback(() => timesheetsApi.statusByEmployee(week ?? undefined), [week]),
     [week, reloadKey],
   );
 
@@ -264,9 +265,10 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
 
   const notify = useApiAction(timesheetsApi.notify);
   const active = view === 0 ? byProject : byEmployee;
+  const shownWeek = active.data?.week_start_date ?? week ?? lastCompletedWeek();
 
   const shiftWeek = (days: number) => {
-    setWeek((current) => toIsoDate(addDays(fromIsoDate(current), days)));
+    setWeek(toIsoDate(addDays(fromIsoDate(shownWeek), days)));
     setExpanded(null);
     setSentHere(new Set());
     setSentProjects(new Set());
@@ -291,7 +293,7 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
     }
     setSending(key);
     const result = await notify
-      .run({ employee_ids: pending.map((row) => row.employee_id), week })
+      .run({ employee_ids: pending.map((row) => row.employee_id), week: shownWeek })
       .finally(() => setSending(null));
     if (result) {
       announce(result.count, who);
@@ -306,7 +308,7 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
     }
     setSending(`p:${project.project_id}`);
     const result = await notify
-      .run({ project: project.project_id, week })
+      .run({ project: project.project_id, week: shownWeek })
       .finally(() => setSending(null));
     if (result) {
       announce(result.count, 'everyone on this project');
@@ -337,7 +339,14 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
 
   const weekLabel = active.data
     ? formatDateRange(active.data.week_start_date, active.data.week_end_date)
-    : week;
+    : shownWeek;
+
+  const weekCaption =
+    shownWeek === toIsoDate(mondayOf(new Date()))
+      ? 'This week'
+      : shownWeek === lastCompletedWeek()
+        ? 'Last completed week'
+        : 'Selected week';
 
   return (
     <Box sx={{ p: 2 }}>
@@ -355,14 +364,14 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
           <Box sx={{ minWidth: 230, textAlign: 'center' }}>
             <Typography variant="h4">{weekLabel}</Typography>
             <Typography variant="caption" color="text.secondary">
-              {week === lastCompletedWeek() ? 'Last completed week' : 'Selected week'}
+              {weekCaption}
             </Typography>
           </Box>
           <IconButton onClick={() => shiftWeek(7)} aria-label="Next week">
             <ChevronRightIcon />
           </IconButton>
-          {week !== lastCompletedWeek() && (
-            <Button size="small" onClick={() => setWeek(lastCompletedWeek())}>
+          {week !== null && (
+            <Button size="small" onClick={() => setWeek(null)}>
               Latest
             </Button>
           )}
@@ -657,8 +666,8 @@ export default function TimesheetTrackingTab({ reloadKey }: { reloadKey: number 
         <TimesheetDetailsDialog
           key={viewing.employee_id}
           row={viewing}
-          weekStart={week}
-          weekEnd={toIsoDate(addDays(fromIsoDate(week), 6))}
+          weekStart={shownWeek}
+          weekEnd={toIsoDate(addDays(fromIsoDate(shownWeek), 6))}
           onClose={() => setViewing(null)}
         />
       )}

@@ -386,6 +386,8 @@ EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
 # Without this a dead SMTP host holds the request thread open indefinitely.
 EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=10)
+# Tests turn this on, to see the email from the call that caused it.
+NOTIFICATION_EMAIL_INLINE = False
 
 # Configuring a host *is* the intent to send, so it selects the SMTP backend on
 # its own - nobody should have to remember to flip EMAIL_BACKEND as well. With

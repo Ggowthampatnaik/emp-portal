@@ -11,7 +11,7 @@ from apps.timesheets.services import (
     hr_send_back_timesheet,
     submit_timesheet,
 )
-from common.enums import ApprovalStatus
+from common.enums import ApprovalStatus, RoleSlug
 from common.exceptions import BusinessRuleViolation, WorkflowStateError
 
 
@@ -52,6 +52,89 @@ def test_the_manager_hands_it_to_hr(with_hr):
     assert with_hr.status == ApprovalStatus.PENDING_HR
     assert with_hr.is_locked is False, "the month is not closed until HR agrees"
     assert with_hr.is_editable is False, "nor can the employee change what was approved"
+
+
+def hr_notes(user):
+    return Notification.objects.filter(recipient=user, title__startswith="Timesheet awaiting HR")
+
+
+@pytest.mark.django_db
+def test_hr_hears_as_soon_as_the_manager_approves(org, with_hr):
+    note = hr_notes(org["hr"].user).get()
+
+    assert org["employee"].full_name in note.title
+    assert "needs HR approval" in note.message
+    assert note.link == "/timesheets/approvals"
+    assert note.is_read is False
+
+
+@pytest.mark.django_db
+def test_hr_hears_nothing_until_the_manager_has_approved(org, filed):
+    assert not hr_notes(org["hr"].user).exists()
+
+
+@pytest.mark.django_db
+def test_every_hr_user_hears_and_so_does_super_admin(org, filed, make_user):
+    second = make_user("second.hr@trigyan.io", RoleSlug.EMPLOYEE, RoleSlug.HR)
+    boss = make_user("the.boss@trigyan.io", RoleSlug.SUPER_ADMIN)
+
+    approve_timesheet(filed.pk, org["manager"].user)
+
+    for user in (org["hr"].user, second, boss):
+        assert hr_notes(user).count() == 1
+
+
+@pytest.mark.django_db
+def test_the_manager_and_employee_are_not_told_to_approve_it(org, with_hr):
+    assert not hr_notes(org["manager"].user).exists()
+    assert not hr_notes(org["employee"].user).exists()
+
+
+@pytest.mark.django_db
+def test_hr_is_not_asked_to_approve_their_own_sheet(org, allocated_project, past_monday):
+    from apps.projects.models import ProjectAllocation
+    from apps.timesheets.services import get_or_create_timesheet, save_entries
+
+    ProjectAllocation.objects.create(
+        project=allocated_project,
+        employee=org["hr"],
+        allocation_percentage=50,
+        start_date=allocated_project.start_date,
+    )
+    sheet = get_or_create_timesheet(org["hr"], past_monday)
+    save_entries(
+        sheet,
+        [
+            {
+                "project": allocated_project.pk,
+                "work_date": past_monday,
+                "hours": "8",
+                "description": "Handled onboarding.",
+            }
+        ],
+    )
+    submit_timesheet(sheet.pk, org["hr"].user)
+
+    approve_timesheet(sheet.pk, org["manager"].user)
+
+    assert not hr_notes(org["hr"].user).exists()
+
+
+@pytest.mark.django_db
+def test_hr_hears_again_after_sending_it_back(org, with_hr):
+    hr_send_back_timesheet(with_hr.pk, org["hr"].user, "These hours look high.")
+
+    approve_timesheet(with_hr.pk, org["manager"].user)
+
+    assert hr_notes(org["hr"].user).count() == 2
+
+
+@pytest.mark.django_db
+def test_approving_through_the_page_tells_hr(auth_client, org, filed):
+    response = decide(auth_client(org["manager"]), filed, "approve")
+
+    assert response.status_code == 200, response.data
+    assert hr_notes(org["hr"].user).count() == 1
 
 
 @pytest.mark.django_db

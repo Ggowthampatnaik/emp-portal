@@ -86,25 +86,26 @@ function BalanceCell({ row }: { row: LeaveQueueRow }) {
 }
 
 /**
- * Column widths per queue. Shares of the width so the gaps come out even. For
- * the manager, Reason takes what is left (long reasons show more before the
- * ellipsis) and Decision is only as wide as Approve + Reject.
+ * Column widths per queue. The manager's are in pixels, each just wider than
+ * its content, so the columns stop at the edge of the page with no sideways
+ * scrolling on a 1366px laptop. Reason takes what is left (long reasons show
+ * more before the ellipsis) and Decision is only as wide as Approve + Reject.
  *
- * HR has no Reason column - it is in the dialog either decision opens - so
+ * HR's are shares of the width so the gaps come out even. HR has no Reason column - it is in the dialog either decision opens - so
  * Decision takes what is left instead, and the shares have to leave it the
  * 325px that Approve + Send Back To Manager need at `table`, the narrowest the
  * table goes. That width is what fits beside the sidebar on a 1366px laptop.
  */
 const COLS = {
   manager: {
-    employee: '17%',
-    type: '14%',
-    date: '12%',
-    days: '8%',
-    balance: '10%',
+    employee: 185,
+    type: 130,
+    date: 125,
+    days: 65,
+    balance: 100,
     manager: '0',
-    decision: 230,
-    table: 1150,
+    decision: 222,
+    table: 1020,
   },
   hr: {
     employee: '14%',

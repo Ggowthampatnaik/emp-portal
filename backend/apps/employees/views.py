@@ -193,7 +193,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         queryset = Employee.objects.select_related(
             "user", "department", "designation", "reporting_manager__user"
         ).prefetch_related("user__roles")  # the list rows carry roles
-        if self.action in ("list", "org_chart"):
+        # Not the org chart: it is the whole company for everyone, and carries
+        # nothing beyond what the company directory already shows them.
+        if self.action == "list":
             queryset = scope_employees(queryset, self.request.user)
         if self.action == "list":
             queryset = self._exclude_self(queryset)
@@ -456,9 +458,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         )
         return Response(EmployeeListSerializer(reports, many=True).data)
 
-    @extend_schema(
-        description="Reporting tree for the visible population, rooted at the topmost nodes."
-    )
+    @extend_schema(description="The company's reporting tree, rooted at the topmost people.")
     @action(detail=False, methods=["get"], url_path="org-chart")
     def org_chart(self, request: Request) -> Response:
         employees = list(self.get_queryset().filter(employment_status=EmploymentStatus.ACTIVE))

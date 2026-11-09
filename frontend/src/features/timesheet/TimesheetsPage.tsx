@@ -41,7 +41,7 @@ export default function TimesheetsPage() {
   // A week picked from My timesheets, opened in the editor on the first tab.
   const [openWeek, setOpenWeek] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const refreshAll = () => setReloadKey((key) => key + 1);
+  const refreshAll = useCallback(() => setReloadKey((key) => key + 1), []);
 
   // Following a second link while already on the page has to move the tab too.
   useEffect(() => {
@@ -77,6 +77,14 @@ export default function TimesheetsPage() {
   // Tabs are conditional, so their indices are derived rather than hard-coded.
   const REQUESTS = mayApprove ? 2 : -1;
   const TRACKING = mayTrack ? (mayApprove ? 3 : 2) : -1;
+
+  // Coming back to the board is when somebody expects it to have moved on: they
+  // have usually just been in another tab watching a timesheet go in.
+  useEffect(() => {
+    if (tab !== TRACKING) return;
+    window.addEventListener('focus', refreshAll);
+    return () => window.removeEventListener('focus', refreshAll);
+  }, [tab, TRACKING, refreshAll]);
 
   return (
     <>

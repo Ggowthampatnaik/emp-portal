@@ -52,15 +52,24 @@ describe('route table', () => {
     expect(found?.guarded, '/employees must not sit behind RequireAccess').toBe(false);
   });
 
+  it('leaves the org chart open to every signed-in user', () => {
+    const found = locate(router.routes, '/employees/org-chart');
+    expect(found, '/employees/org-chart route is missing').not.toBeNull();
+    expect(found?.guarded, '/employees/org-chart must not sit behind RequireAccess').toBe(
+      false,
+    );
+  });
+
   it.each([
     '/employees/:id',
     '/employees/departments',
-    '/employees/org-chart',
     '/reports',
     // A single report row on its own page: same reporting permissions as the
     // table it is opened from.
     '/reports/:kind/:rowKey',
     '/administration',
+    // Issuing company kit: `asset.manage`.
+    '/asset-management',
     // Finance is its own module with its own role; nothing else is behind it.
     '/finance',
     // Everybody's leave, not just your own.

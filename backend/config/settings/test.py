@@ -26,6 +26,7 @@ CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
 CELERY_RESULT_BACKEND = "cache+memory://"
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+NOTIFICATION_EMAIL_INLINE = True
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
 # As in production: the maintenance admin is not routed. tests/test_admin_exposure.py

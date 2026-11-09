@@ -1,6 +1,6 @@
 /**
- * Timesheet approval queue. Expanding a row shows the per-project breakdown,
- * so the reviewer can see what they are approving without leaving the page.
+ * Timesheet approval queue. The whole row opens the per-project breakdown, so
+ * the reviewer can see what they are approving without leaving the page.
  *
  * Two stages share it: a manager's sheets are `pending`, and those the manager
  * has approved are `pending_hr`. Returning at the second stage goes back to the
@@ -46,9 +46,9 @@ type Decision = 'approve' | 'reject';
  * that opens under a row. Both span the same width, so the same percentages
  * line up: Date under Employee, Project under Week, Hours under Hours, and the
  * task description across Submitted and Decision. Everything reads from the
- * left. Decision is as wide as its two buttons (Approve 97px + Return 86px)
- * and no wider, so there is no empty strip on the right; Employee (and Date
- * under it) takes the spare width.
+ * left. Decision is as wide as its two buttons (Approve 97px + Return 86px, or
+ * Send back 110px on HR's stage) and no wider, so there is no empty strip on the
+ * right; Employee (and Date under it) takes the spare width.
  */
 const COL = {
   expander: 56,
@@ -56,6 +56,7 @@ const COL = {
   hours: '12%',
   submitted: '14%',
   decision: 230,
+  decisionWithHr: 248,
 } as const;
 
 /**
@@ -63,7 +64,7 @@ const COL = {
  * than widths on header cells, because the inner table's task description
  * spans the Submitted and Decision columns - one cell cannot carry two widths.
  */
-function Columns() {
+function Columns({ decision }: { decision: number }) {
   return (
     <colgroup>
       <col style={{ width: COL.expander }} />
@@ -71,7 +72,7 @@ function Columns() {
       <col style={{ width: COL.week }} />
       <col style={{ width: COL.hours }} />
       <col style={{ width: COL.submitted }} />
-      <col style={{ width: COL.decision }} />
+      <col style={{ width: decision }} />
     </colgroup>
   );
 }
@@ -206,7 +207,13 @@ export default function TimesheetApprovalsTab({
         )}
       <TableContainer sx={{ overflowX: 'auto' }}>
         <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 1000 }}>
-          <Columns />
+          <Columns
+            decision={
+              data.results.some((row) => row.status === 'pending_hr')
+                ? COL.decisionWithHr
+                : COL.decision
+            }
+          />
           <TableHead>
             <TableRow>
               <TableCell />
@@ -220,12 +227,22 @@ export default function TimesheetApprovalsTab({
           <TableBody>
             {data.results.map((row) => (
               <Fragment key={row.id}>
-                <TableRow hover>
+                <TableRow
+                  hover
+                  selected={expanded === row.id}
+                  onClick={() => void toggle(row)}
+                  sx={{ cursor: 'pointer' }}
+                >
                   <TableCell>
                     <IconButton
                       size="small"
-                      onClick={() => void toggle(row)}
+                      onClick={(event) => {
+                        // The row toggles too; once is enough.
+                        event.stopPropagation();
+                        void toggle(row);
+                      }}
                       aria-label="Show breakdown"
+                      aria-expanded={expanded === row.id}
                     >
                       {expanded === row.id ? (
                         <KeyboardArrowUpIcon />
@@ -260,8 +277,9 @@ export default function TimesheetApprovalsTab({
                   <TableCell>
                     {row.submitted_at ? new Date(row.submitted_at).toLocaleDateString() : '-'}
                   </TableCell>
-                  <TableCell>
-                    <Stack direction="row" spacing={1}>
+                  {/* A decision is not a request to open the breakdown. */}
+                  <TableCell onClick={(event) => event.stopPropagation()}>
+                    <Stack direction="row" spacing={1} sx={{ whiteSpace: 'nowrap' }}>
                       <Button
                         size="small"
                         variant="contained"

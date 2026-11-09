@@ -9,7 +9,7 @@
 
 import { Provider } from 'react-redux';
 import { MemoryRouter } from 'react-router-dom';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -78,8 +78,18 @@ beforeEach(() => {
     submitted_count: 9,
     pending_count: 5,
   });
-  statusByEmployee.mockResolvedValue({ results: [], submitted_count: 0, pending_count: 0 });
-  statusByProject.mockResolvedValue({ results: [] });
+  statusByEmployee.mockResolvedValue({
+    week_start_date: '2026-08-17',
+    week_end_date: '2026-08-23',
+    results: [],
+    submitted_count: 0,
+    pending_count: 0,
+  });
+  statusByProject.mockResolvedValue({
+    week_start_date: '2026-08-17',
+    week_end_date: '2026-08-23',
+    results: [],
+  });
   mine.mockResolvedValue({ count: 0, results: [] });
   weekly.mockReturnValue(new Promise(() => {}));
 });
@@ -106,6 +116,30 @@ describe('TimesheetsPage', () => {
     await screen.findByRole('tab', { name: /requests/i });
     expect(screen.queryByRole('tab', { name: /submissions/i })).not.toBeInTheDocument();
     expect(submissionCounts).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the board and its badge on coming back to the page', async () => {
+    const user = userEvent.setup();
+    renderAs(HR);
+
+    await user.click(await screen.findByRole('tab', { name: /submissions/i }));
+    await waitFor(() => expect(submissionCounts).toHaveBeenCalled());
+    const before = submissionCounts.mock.calls.length;
+
+    fireEvent(window, new Event('focus'));
+
+    await waitFor(() => expect(submissionCounts.mock.calls.length).toBeGreaterThan(before));
+  });
+
+  it('leaves other tabs alone on coming back to the page', async () => {
+    renderAs(HR);
+
+    await waitFor(() => expect(submissionCounts).toHaveBeenCalled());
+    const before = submissionCounts.mock.calls.length;
+
+    fireEvent(window, new Event('focus'));
+
+    expect(submissionCounts.mock.calls.length).toBe(before);
   });
 
   it('shows no badge when nothing is outstanding', async () => {

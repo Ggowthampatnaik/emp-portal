@@ -21,7 +21,7 @@ from django.utils import timezone
 
 from apps.employees.models import Employee
 from apps.notifications.models import Notification
-from apps.notifications.services import notify
+from apps.notifications.services import notify, notify_many, users_holding
 from apps.projects.models import Project, ProjectAllocation
 from apps.timesheets.models import (
     MAX_HOURS_PER_DAY,
@@ -212,8 +212,8 @@ def submit_timesheet(timesheet_id: int, actor, comment: str = "") -> Timesheet:
 def approve_timesheet(timesheet_id: int, actor, comment: str = "") -> Timesheet:
     """Stage one. Hands the sheet to HR, the same two stages as leave.
 
-    HR hears nothing per sheet: a company files a sheet a week per person, and
-    the queue and its dashboard count say the same without the noise.
+    HR is told straight away. Not the person whose sheet it is, who cannot
+    approve it, nor whoever just approved it, who already knows.
     """
     timesheet = (
         Timesheet.objects.select_for_update().select_related("employee__user").get(pk=timesheet_id)
@@ -227,6 +227,21 @@ def approve_timesheet(timesheet_id: int, actor, comment: str = "") -> Timesheet:
     _decide(timesheet, ApprovalStatus.PENDING_HR, actor, comment)
     TimesheetApproval.objects.create(
         timesheet=timesheet, actor=actor, action=TimesheetApproval.Action.APPROVED, comment=comment
+    )
+
+    notify_many(
+        users_holding("timesheet.hr_approve").exclude(
+            pk__in=[timesheet.employee.user_id, getattr(actor, "pk", None)]
+        ),
+        title=f"Timesheet awaiting HR: {timesheet.employee.full_name}",
+        message=(
+            f"{timesheet.employee.full_name}'s timesheet for the week of "
+            f"{human_date(timesheet.week_start_date)} ({timesheet.total_hours} hours) has been "
+            "approved by their manager and needs HR approval."
+        ),
+        kind=Notification.Kind.TIMESHEET_SUBMITTED,
+        level=Notification.Level.INFO,
+        link="/timesheets/approvals",
     )
     return timesheet
 
@@ -365,6 +380,19 @@ def reject_timesheet(timesheet_id: int, actor, comment: str = "") -> Timesheet:
 # Submission tracking (HR)
 # ---------------------------------------------------------------------------
 SUBMITTED_STATES = {ApprovalStatus.PENDING, ApprovalStatus.PENDING_HR, ApprovalStatus.APPROVED}
+
+
+def tracking_week(today: date | None = None) -> date:
+    """The week HR's board opens on, and the one its badge counts.
+
+    The last completed week is what HR chases, but people often file on the
+    Friday. Once anyone has submitted for the current week the board moves to it,
+    or what they just filed would be nowhere on it.
+    """
+    today = today or timezone.localdate()
+    current = week_start(today)
+    filed = Timesheet.objects.filter(week_start_date=current, status__in=SUBMITTED_STATES)
+    return current if filed.exists() else last_completed_week(today)
 
 
 def _sheets_for_week(week_monday: date) -> dict[int, Timesheet]:

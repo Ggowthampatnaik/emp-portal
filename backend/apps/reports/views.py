@@ -47,7 +47,7 @@ from common.enums import (
     EmploymentStatus,
     LeaveStatus,
 )
-from common.scoping import scope_by_employee, scope_employees
+from common.scoping import employee_profile, scope_by_employee, scope_employees
 from common.spreadsheet import safe_row
 
 
@@ -312,8 +312,20 @@ class ProjectReportView(BaseReportView):
     def get(self, request: Request) -> Response:
         self.check_report_permission(request)
 
+        # Everyone without the portfolio reports on the projects they run or are
+        # on, the same rule as the Projects page. A subquery, because joining
+        # members here would multiply the hours summed below.
+        scope = Project.objects.all()
+        if not request.user.has_module_permission("project.view_all"):
+            profile = employee_profile(request.user)
+            scope = scope.filter(
+                pk__in=Project.objects.filter(
+                    Q(members__employee=profile) | Q(project_manager=profile)
+                ).values("pk")
+            )
+
         projects = (
-            Project.objects.annotate(
+            scope.annotate(
                 team_size=Count("members", filter=Q(members__left_on__isnull=True), distinct=True),
                 hours_booked=Sum("timesheet_entries__hours"),
             )
@@ -439,6 +451,7 @@ class DashboardSummaryView(APIView):
 
         if profile is not None:
             from apps.leave_management.models import LeaveBalance
+            from apps.leave_management.services import open_balances
 
             # Gender-restricted entitlements (182 days of maternity leave)
             # would dominate the headline number without describing anyone's
@@ -447,6 +460,7 @@ class DashboardSummaryView(APIView):
             # Unpaid leave (Loss of Pay, 60 days) stays out too: it is not time
             # off anyone is owed, and counting it made "Leave available" read
             # 60 days higher than the paid leave anyone actually has.
+            open_balances(profile, today.year)
             balances = LeaveBalance.objects.filter(
                 employee=profile,
                 year=today.year,

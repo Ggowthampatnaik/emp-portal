@@ -135,6 +135,46 @@ describe('ProjectTeamRow', () => {
     expect(screen.queryByText('2026-01-06')).not.toBeInTheDocument();
   });
 
+  it('offers only the team when allocating, and greys out anyone already allocated', async () => {
+    const user = userEvent.setup();
+    detail.mockResolvedValue(
+      project(
+        [
+          member(),
+          member({
+            id: 2,
+            employee: 8,
+            employee_name: 'Arjun Pillai',
+            employee_code: 'TRG0008',
+          }),
+        ],
+        [allocation()],
+      ),
+    );
+    renderRow(MANAGER);
+
+    await user.click(await screen.findByRole('button', { name: /allocate/i }));
+    await user.click(await screen.findByRole('combobox', { name: /team member/i }));
+
+    const options = await screen.findAllByRole('option');
+    expect(options).toHaveLength(2);
+    expect(options[0]).toHaveAttribute('aria-disabled', 'true');
+    expect(options[0]).toHaveTextContent('already 60%');
+    expect(options[1]).toHaveTextContent('Arjun Pillai (TRG0008)');
+    expect(options[1]).not.toHaveAttribute('aria-disabled');
+  });
+
+  it('says so when everyone on the team is already allocated', async () => {
+    const user = userEvent.setup();
+    renderRow(MANAGER);
+
+    await user.click(await screen.findByRole('button', { name: /allocate/i }));
+
+    expect(
+      await screen.findByText('Everyone on this team already has an allocation.'),
+    ).toBeInTheDocument();
+  });
+
   it('lists somebody on the team with no allocation', async () => {
     detail.mockResolvedValue(
       project(

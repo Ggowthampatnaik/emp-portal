@@ -149,24 +149,24 @@ export default function ProjectsPage() {
         ) : !data?.results.length ? (
           <EmptyState
             title="No projects to show"
-            detail="You see the projects you are a member of; ask a manager to add you to a team."
+            detail="You see the projects you manage or are a member of; ask a manager to add you to a team."
           />
         ) : (
           <TableContainer sx={{ overflowX: 'auto' }}>
             {/* Fixed widths: every column starts in the same place whatever the
                 names in it, and all of them read from the left. */}
-            <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 1100 }}>
+            <Table size="small" sx={{ tableLayout: 'fixed', minWidth: 1010 }}>
               <TableHead>
                 <TableRow>
                   <TableCell sx={{ width: COLUMNS.expander }} />
                   <TableCell sx={{ width: COLUMNS.code }}>Code</TableCell>
-                  <TableCell sx={{ width: COLUMNS.project }}>Project</TableCell>
+                  <TableCell>Project</TableCell>
                   <TableCell sx={{ width: COLUMNS.client }}>Client</TableCell>
                   <TableCell sx={{ width: COLUMNS.manager }}>Manager</TableCell>
                   <TableCell sx={{ width: COLUMNS.team }}>Team</TableCell>
                   <TableCell sx={{ width: COLUMNS.allocation }}>Total allocation</TableCell>
                   <TableCell sx={{ width: COLUMNS.start }}>Start</TableCell>
-                  <TableCell>Status</TableCell>
+                  <TableCell sx={{ width: COLUMNS.status }}>Status</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>

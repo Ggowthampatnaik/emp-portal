@@ -11,7 +11,7 @@ import pytest
 from django.core import mail
 
 from apps.notifications.models import Notification
-from apps.projects.models import Project
+from apps.projects.models import Project, ProjectMember
 
 
 def add_to_team(client, project, employee, **overrides):
@@ -27,6 +27,13 @@ def add_to_team(client, project, employee, **overrides):
 
 
 def allocate(client, project, employee, percentage="60.00"):
+    """Allocates someone already on the team, which is the only way now."""
+    ProjectMember.objects.get_or_create(
+        project=project,
+        employee=employee,
+        left_on=None,
+        defaults={"role_in_project": "developer", "joined_on": project.start_date},
+    )
     return client.post(
         f"/api/v1/projects/{project.pk}/allocations/",
         {
@@ -169,6 +176,7 @@ def test_the_longest_project_name_still_fits(auth_client, org, department):
         code="PRJ-LONG",
         name="N" * 200,
         department=department,
+        project_manager=org["manager"],
         status=Project.Status.ACTIVE,
         start_date="2026-01-01",
     )

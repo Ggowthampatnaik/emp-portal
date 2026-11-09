@@ -20,6 +20,7 @@ from apps.timesheets.services import (
     submission_status_by_employee,
     submission_status_by_project,
     submit_timesheet,
+    tracking_week,
     week_start,
 )
 from common.enums import EmploymentStatus
@@ -88,6 +89,46 @@ def test_the_reporting_week_is_the_last_completed_one():
 # ---------------------------------------------------------------------------
 # By employee
 # ---------------------------------------------------------------------------
+@pytest.mark.django_db
+def test_the_board_stays_on_last_week_until_someone_files_for_this_one(org, team):
+    this_week = week_start(timezone.localdate())
+    file_timesheet(org["employee"], team, this_week, submit=False)
+
+    assert tracking_week() == last_completed_week(), "a draft is not a submission"
+
+
+@pytest.mark.django_db
+def test_the_board_moves_to_this_week_once_someone_files(org, team):
+    this_week = week_start(timezone.localdate())
+    file_timesheet(org["employee"], team, this_week)
+
+    assert tracking_week() == this_week
+
+
+@pytest.mark.django_db
+def test_the_count_goes_up_when_someone_on_the_team_files(auth_client, org, team):
+    url = "/api/v1/timesheets/status/by-project/"
+    before = auth_client(org["hr"]).get(url).data["results"]
+
+    file_timesheet(org["employee"], team, week_start(timezone.localdate()))
+    after = auth_client(org["hr"]).get(url).data
+
+    assert after["week_start_date"] == week_start(timezone.localdate())
+    assert before[0]["submitted_count"] == 0
+    assert after["results"][0]["submitted_count"] == 1
+
+
+@pytest.mark.django_db
+def test_the_badge_counts_the_same_week_as_the_board(auth_client, org, team):
+    file_timesheet(org["employee"], team, week_start(timezone.localdate()))
+
+    response = auth_client(org["hr"]).get(
+        "/api/v1/timesheets/status/by-employee/", {"counts_only": "true"}
+    )
+
+    assert response.data["submitted_count"] == 1
+
+
 @pytest.mark.django_db
 def test_every_active_employee_appears_even_without_a_timesheet(org, past_week):
     rows = submission_status_by_employee(past_week)

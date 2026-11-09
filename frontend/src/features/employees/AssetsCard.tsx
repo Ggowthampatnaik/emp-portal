@@ -106,10 +106,13 @@ function AssetRow({
 export default function AssetsCard({
   employeeId,
   canManage,
+  onChanged,
 }: {
   employeeId: number;
   /** `asset.manage` — HR and Admin. Everyone else gets a read-only list. */
   canManage: boolean;
+  /** After an asset is issued, changed or taken back, for a page that counts them. */
+  onChanged?: () => void;
 }) {
   const dispatch = useAppDispatch();
   const [editing, setEditing] = useState<EmployeeAsset | null>(null);
@@ -131,6 +134,7 @@ export default function AssetsCard({
     if (!done) return;
     dispatch(showToast(`${asset.name} removed.`, 'success'));
     reload();
+    onChanged?.();
   };
 
   const assets = data ?? [];
@@ -210,6 +214,7 @@ export default function AssetsCard({
             setAdding(false);
             setEditing(null);
             reload();
+            onChanged?.();
           }}
         />
       )}

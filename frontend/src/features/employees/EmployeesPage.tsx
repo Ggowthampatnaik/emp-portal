@@ -7,7 +7,6 @@
  * Super Admin see everyone anyway, so that table is their whole page.
  */
 
-import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import ApartmentIcon from '@mui/icons-material/Apartment';
 import Avatar from '@mui/material/Avatar';
 import Box from '@mui/material/Box';
@@ -176,29 +175,18 @@ export default function EmployeesPage() {
         }
         actions={
           <Stack direction="row" spacing={1}>
-            {/* Super Admin's module is the people list alone - no chart or
-                department admin in their header - and the two pages are
-                guarded routes, so the buttons only show to those who can
-                follow them. */}
+            {/* Super Admin's module is the people list alone - no department
+                admin in their header - and it is a guarded route, so the button
+                only shows to those who can follow it. */}
             {!isSuperAdmin && mayManage && (
-              <>
-                <Button
-                  component={RouterLink}
-                  to="/employees/org-chart"
-                  startIcon={<AccountTreeIcon />}
-                  variant="outlined"
-                >
-                  Org chart
-                </Button>
-                <Button
-                  component={RouterLink}
-                  to="/employees/departments"
-                  startIcon={<ApartmentIcon />}
-                  variant="outlined"
-                >
-                  Departments
-                </Button>
-              </>
+              <Button
+                component={RouterLink}
+                to="/employees/departments"
+                startIcon={<ApartmentIcon />}
+                variant="outlined"
+              >
+                Departments
+              </Button>
             )}
             {/* No Add employee here: onboarding lives in Administration -> Users. */}
           </Stack>

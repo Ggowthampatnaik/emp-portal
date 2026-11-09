@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createStore } from '@/app/store';
 import { setUser } from '@/features/auth/authSlice';
 import { makeUser } from '@/test/fixtures';
+import { addDays, mondayOf, toIsoDate } from '@/utils/date';
 import type { ProjectSubmissionRow, SubmissionStatusRow } from '@/types/domain';
 
 const statusByProject = vi.fn();
@@ -197,6 +198,39 @@ describe('TimesheetTrackingTab, project view', () => {
     expect(detail).toHaveBeenCalledWith(41);
     expect(await within(dialog).findByText('Checkout API.')).toBeInTheDocument();
     expect(within(dialog).getByText('Draft only')).toBeInTheDocument();
+  });
+
+  it('lets the backend choose the week, and says which it chose', async () => {
+    const monday = toIsoDate(mondayOf(new Date()));
+    statusByProject.mockResolvedValue({
+      week_start_date: monday,
+      week_end_date: toIsoDate(addDays(mondayOf(new Date()), 6)),
+      results: [],
+    });
+    statusByEmployee.mockResolvedValue({
+      week_start_date: monday,
+      week_end_date: toIsoDate(addDays(mondayOf(new Date()), 6)),
+      submitted_count: 1,
+      pending_count: 3,
+      results: [],
+    });
+    renderTab();
+
+    expect(await screen.findByText('This week')).toBeInTheDocument();
+    expect(statusByProject).toHaveBeenCalledWith(undefined);
+  });
+
+  it('steps back from the week it was shown, then returns to the latest', async () => {
+    const user = userEvent.setup();
+    renderTab();
+
+    await screen.findByRole('button', { name: 'Previous week' });
+    await waitFor(() => expect(statusByProject).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: 'Previous week' }));
+
+    await waitFor(() => expect(statusByProject).toHaveBeenLastCalledWith('2026-09-21'));
+    await user.click(await screen.findByRole('button', { name: 'Latest' }));
+    await waitFor(() => expect(statusByProject).toHaveBeenLastCalledWith(undefined));
   });
 
   it('says so when the person has no timesheet that week', async () => {

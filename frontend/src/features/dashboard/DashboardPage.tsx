@@ -3,6 +3,7 @@
  * /dashboard/summary/, which returns only the sections the caller may see.
  */
 
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import ApartmentIcon from '@mui/icons-material/Apartment';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import EventAvailableIcon from '@mui/icons-material/EventAvailable';
@@ -101,6 +102,14 @@ function QuickActions({ onApply }: { onApply: () => void }) {
         startIcon={<ReceiptLongIcon />}
       >
         View payslip
+      </Button>
+      <Button
+        component={RouterLink}
+        to="/employees/org-chart"
+        variant="outlined"
+        startIcon={<AccountTreeIcon />}
+      >
+        Org chart
       </Button>
     </Stack>
   );

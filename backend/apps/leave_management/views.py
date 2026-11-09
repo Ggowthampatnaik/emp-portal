@@ -29,12 +29,12 @@ from apps.leave_management.services import (
     apply_for_leave,
     cancel_leave,
     edit_leave,
-    get_or_create_balance,
     hr_approve,
     hr_send_back,
     import_holidays_docx,
     manager_approve,
     manager_reject,
+    open_balances,
 )
 from common.audit import record_audit
 from common.enums import LEAVE_PENDING_STATES, AuditAction, LeaveStatus
@@ -193,11 +193,7 @@ class LeaveBalanceViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
             return Response([])
 
         year = int(request.query_params.get("year", date.today().year))
-        # A gender-restricted type (maternity leave) does not exist for anyone
-        # it excludes: no balance is opened and none is listed.
-        for leave_type in LeaveType.objects.filter(is_active=True):
-            if leave_type.available_to(profile):
-                get_or_create_balance(profile, leave_type, year)
+        open_balances(profile, year)
 
         balances = (
             LeaveBalance.objects.filter(employee=profile, year=year)

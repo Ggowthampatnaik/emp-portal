@@ -23,7 +23,7 @@ import {
 } from '@/features/ui/uiSlice';
 
 /** How often the unread badge re-checks. Cheap query, no websocket needed. */
-const UNREAD_POLL_MS = 60_000;
+const UNREAD_POLL_MS = 15_000;
 
 /** Shell for every authenticated page: sidebar, topbar, content, toasts. */
 export default function AppLayout() {
@@ -36,11 +36,15 @@ export default function AppLayout() {
   const isMobile = useMediaQuery((theme: Theme) => theme.breakpoints.down('md'));
 
   useEffect(() => {
-    void dispatch(refreshUnreadCount());
-    const timer = window.setInterval(() => {
-      void dispatch(refreshUnreadCount());
-    }, UNREAD_POLL_MS);
-    return () => window.clearInterval(timer);
+    const refresh = () => void dispatch(refreshUnreadCount());
+    refresh();
+    const timer = window.setInterval(refresh, UNREAD_POLL_MS);
+    // A background tab's timer is slowed right down, so check on coming back.
+    window.addEventListener('focus', refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refresh);
+    };
   }, [dispatch]);
 
   // On a phone the drawer covers the page, so leaving it open after a tap

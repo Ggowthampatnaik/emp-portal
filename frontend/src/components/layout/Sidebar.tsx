@@ -24,7 +24,7 @@ interface Props {
 }
 
 export default function Sidebar({ open, onClose }: Props) {
-  const { canAny, isSuperAdmin } = usePermissions();
+  const { canAny, isSuperAdmin, roles } = usePermissions();
   const { pathname } = useLocation();
   // Below md the drawer floats over the page and closes behind you; a
   // persistent drawer at 248px leaves a phone barely 140px of content.
@@ -34,6 +34,7 @@ export default function Sidebar({ open, onClose }: Props) {
   const visibleItems = NAV_ITEMS.filter(
     (item) =>
       !(isSuperAdmin && item.hiddenForSuperAdmin) &&
+      (!item.onlyForRoles || item.onlyForRoles.some((role) => roles.includes(role as never))) &&
       (item.permissions.length === 0 || canAny(...item.permissions)),
   );
 

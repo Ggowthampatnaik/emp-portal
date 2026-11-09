@@ -20,31 +20,13 @@ from django.utils import timezone
 
 from apps.finance.models import PayslipApproval
 from apps.notifications.models import Notification
-from apps.notifications.services import notify, notify_many
+from apps.notifications.services import notify, notify_many, users_holding
 from apps.payroll.models import PayrollRun, Payslip
 from common.exceptions import BusinessRuleViolation, WorkflowStateError
 from common.humanize import inr
 from common.utils import lock_own_rows
 
 logger = logging.getLogger("empportal.finance")
-
-
-def users_holding(code: str):
-    """Whoever can do something today - a role, not a person."""
-    from django.contrib.auth import get_user_model
-    from django.db.models import Q
-
-    from common.enums import RoleSlug
-
-    return (
-        get_user_model()
-        .objects.filter(is_active=True)
-        .filter(
-            Q(user_roles__role__permissions__code=code)
-            | Q(user_roles__role__slug=RoleSlug.SUPER_ADMIN)
-        )
-        .distinct()
-    )
 
 
 def finance_users():

@@ -13,6 +13,7 @@ import CelebrationIcon from '@mui/icons-material/Celebration';
 import PaymentsIcon from '@mui/icons-material/Payments';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import DevicesIcon from '@mui/icons-material/Devices';
+import Inventory2Icon from '@mui/icons-material/Inventory2';
 import WorkIcon from '@mui/icons-material/Work';
 import type { SvgIconComponent } from '@mui/icons-material';
 
@@ -30,6 +31,8 @@ export interface NavItem {
    * oversight view - rather than every module in the company.
    */
   hiddenForSuperAdmin?: boolean;
+  /** Shown only to these roles, on top of the permission check. */
+  onlyForRoles?: string[];
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -117,5 +120,15 @@ export const NAV_ITEMS: NavItem[] = [
     path: '/administration',
     icon: AdminPanelSettingsIcon,
     permissions: ['admin.manage_users', 'admin.manage_roles', 'admin.system_config'],
+  },
+  {
+    // Issuing kit is the Admin module's. HR holds `asset.manage` as well, but
+    // reaches assets through an employee's record, not from here.
+    label: 'Issue Asset',
+    hiddenForSuperAdmin: true,
+    onlyForRoles: ['admin'],
+    path: '/asset-management',
+    icon: Inventory2Icon,
+    permissions: ['asset.manage'],
   },
 ];

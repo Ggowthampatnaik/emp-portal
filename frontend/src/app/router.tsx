@@ -29,6 +29,7 @@ const TimesheetsPage = lazy(() => import('@/features/timesheet/TimesheetsPage'))
 const ReportsPage = lazy(() => import('@/features/reports/ReportsPage'));
 const ReportRowPage = lazy(() => import('@/features/reports/ReportRowPage'));
 const AdministrationPage = lazy(() => import('@/features/admin/AdministrationPage'));
+const AssetManagementPage = lazy(() => import('@/features/admin/AssetManagementPage'));
 const NotificationsPage = lazy(() => import('@/features/notifications/NotificationsPage'));
 const PayrollPage = lazy(() => import('@/features/payroll/PayrollPage'));
 const CompleteProfilePage = lazy(() => import('@/features/auth/CompleteProfilePage'));
@@ -75,17 +76,17 @@ export const router = createBrowserRouter([
           { path: 'payroll', element: <PayrollPage /> },
           { path: 'projects', element: <ProjectsPage /> },
 
-          // The company directory is open to every signed-in user; the page
-          // itself decides what to show. Full records, the org chart and
+          // The company directory and org chart are open to every signed-in
+          // user; the page itself decides what to show. Full records and
           // department admin stay permission-gated.
           { path: 'employees', element: <EmployeesPage /> },
+          { path: 'employees/org-chart', element: <OrgChartPage /> },
           {
             element: (
               <RequireAccess permissions={['employee.view_team', 'employee.view_all']} />
             ),
             children: [
               { path: 'employees/departments', element: <DepartmentsPage /> },
-              { path: 'employees/org-chart', element: <OrgChartPage /> },
               { path: 'employees/:id', element: <EmployeeDetailPage /> },
             ],
           },
@@ -134,6 +135,10 @@ export const router = createBrowserRouter([
               />
             ),
             children: [{ path: 'administration', element: <AdministrationPage /> }],
+          },
+          {
+            element: <RequireAccess permissions={['asset.manage']} />,
+            children: [{ path: 'asset-management', element: <AssetManagementPage /> }],
           },
         ],
       },

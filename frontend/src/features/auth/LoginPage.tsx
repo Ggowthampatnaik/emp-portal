@@ -238,6 +238,8 @@ export default function LoginPage() {
                     autoComplete="current-password"
                     fullWidth
                     disabled={busy}
+                    // Edge adds its own reveal icon beside the eye below.
+                    sx={{ '& input::-ms-reveal': { display: 'none' } }}
                     slotProps={{
                       input: {
                         endAdornment: (

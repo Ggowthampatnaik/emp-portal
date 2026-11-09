@@ -128,6 +128,8 @@ describe('CompleteProfilePage', () => {
     expect(next).toBeDisabled();
   });
 
+  // Three steps of typing, the longest test in the suite: under a full parallel
+  // run it brushed the 20s default and failed now and then, so it gets twice that.
   it('walks all three steps and submits everything at once', async () => {
     const user = userEvent.setup();
     renderPage();
@@ -153,7 +155,7 @@ describe('CompleteProfilePage', () => {
       emergency_contact_name: 'Rekha Rao',
       emergency_contact_phone: '+919876511111',
     });
-  });
+  }, 40_000);
 
   it('opens the portal once it is done', async () => {
     const user = userEvent.setup();

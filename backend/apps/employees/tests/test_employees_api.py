@@ -207,6 +207,55 @@ def test_org_chart_nests_reports_under_managers(auth_client, org):
     assert report_codes == {"TRG0005", "TRG0006"}
 
 
+@pytest.mark.django_db
+@pytest.mark.parametrize("person", ["employee", "manager", "hr", "admin"])
+def test_everyone_sees_the_whole_company_on_the_chart(auth_client, org, person):
+    response = auth_client(org[person]).get("/api/v1/employees/org-chart/")
+
+    assert response.status_code == 200, response.data
+    assert {node["employee_code"] for node in _flatten(response.data)} == {
+        "TRG0002",
+        "TRG0003",
+        "TRG0004",
+        "TRG0005",
+        "TRG0006",
+        "TRG0012",
+    }
+
+
+@pytest.mark.django_db
+def test_the_chart_shows_an_employee_nothing_private(auth_client, org):
+    response = auth_client(org["employee"]).get("/api/v1/employees/org-chart/")
+
+    assert set(response.data[0]) == {
+        "id",
+        "employee_code",
+        "full_name",
+        "designation",
+        "department",
+        "photo_url",
+        "reports",
+    }
+
+
+@pytest.mark.django_db
+def test_someone_who_has_left_is_not_on_the_chart(auth_client, org):
+    org["peer"].employment_status = EmploymentStatus.INACTIVE
+    org["peer"].save()
+
+    response = auth_client(org["employee"]).get("/api/v1/employees/org-chart/")
+
+    assert "TRG0006" not in {node["employee_code"] for node in _flatten(response.data)}
+
+
+@pytest.mark.django_db
+def test_the_employee_list_is_still_limited_for_an_employee(auth_client, org):
+    response = auth_client(org["employee"]).get("/api/v1/employees/", {"page_size": 100})
+
+    codes = {row["employee_code"] for row in response.data["results"]}
+    assert "TRG0012" not in codes
+
+
 def _flatten(nodes: list[dict]) -> list[dict]:
     out = []
     for node in nodes:

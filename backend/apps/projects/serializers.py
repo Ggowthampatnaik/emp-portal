@@ -90,6 +90,17 @@ class ProjectAllocationSerializer(serializers.ModelSerializer):
                 {"end_date": ["The end date cannot precede the start date."]}
             )
 
+        project = attrs.get("project")
+        if (
+            self.instance is None
+            and project
+            and employee
+            and not project.members.filter(employee=employee, left_on__isnull=True).exists()
+        ):
+            raise serializers.ValidationError(
+                {"employee": [f"{employee.full_name} is not on this project's team."]}
+            )
+
         if employee and percentage and is_active:
             existing = ProjectAllocation.employee_total(
                 employee.pk, exclude_pk=self.instance.pk if self.instance else None

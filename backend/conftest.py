@@ -291,12 +291,13 @@ def approve_leave(org):
 
 
 @pytest.fixture
-def project(db, department) -> Project:
+def project(db, department, org) -> Project:
     return Project.objects.create(
         code="PRJ-001",
         name="Northwind Retail Platform",
         client_name="Northwind Traders",
         department=department,
+        project_manager=org["manager"],
         status=Project.Status.ACTIVE,
         start_date=date(2025, 1, 6),
     )

@@ -298,6 +298,10 @@ Anything else needs `employee.edit`. Enforced server-side in
 
 Projects are cancelled, never deleted — timesheet entries reference them.
 
+**Only the team can be allocated.** An allocation needs an active membership of
+that project: the Allocate dialog lists just the team, and the serializer refuses
+anyone else. Managers see only the projects they manage or are on.
+
 **HR reads the whole portfolio.** `project.view_all` is a read grant, and HR
 holds it because "who is on what" is an HR question. Without it the Projects
 page was empty for them: HR sits on no project team, so the scoped query
@@ -363,6 +367,15 @@ apply -> pending_manager -> [manager approves] -> pending_hr -> [HR approves] ->
   that person's stage-one requests have no approver in HR's own screens. Either
   point the reporting line elsewhere or have a Super Admin act.
 
+**The org chart** opens from a button on the dashboard and is the whole company for
+every signed-in user: `org-chart/` is not scoped, and carries only what the directory
+already shows (name, designation, department, photo, reporting line).
+
+**Leave in the joining year** is pro-rated by the months left, counting the joining
+month if they joined on or before the 15th, rounded to the nearest half day
+(`entitlement_for`). Only paid leave: Loss of Pay and maternity stay at the full
+figure. Every later year is the full amount.
+
 ### 6.5 Timesheets
 
 - **Timesheet** — one employee, one week (always Monday-start).
@@ -371,8 +384,8 @@ apply -> pending_manager -> [manager approves] -> pending_hr -> [HR approves] ->
 
 Approval has two stages, like leave: the manager approves (`pending` →
 `pending_hr`), then HR approves (`approved`), which locks the week and tells the
-employee. HR's disagreement goes back to the manager, not the employee, and HR can
-approve its whole queue at once.
+employee. HR is notified as soon as the manager approves. HR's disagreement goes
+back to the manager, not the employee, and HR can approve its whole queue at once.
 
 Rules: work date must fall inside the sheet's week; ≤24 hours per day; project must
 be allocated; approved sheets are immutable; **every entry needs a task
@@ -384,6 +397,9 @@ HR tracking (`timesheet.view_all`) answers "who has not filed?" for a week —
 completed** Monday–Sunday week. `notify/` (`timesheet.notify`, HR + Super Admin)
 raises one notification per non-submitter and silently skips anyone who has
 already submitted, so a whole project's team can be passed in unfiltered.
+The board opens on the last completed week, or the current week once anyone has
+submitted for it (`tracking_week`), so a timesheet filed on a Friday shows at once.
+It refreshes when the browser tab regains focus.
 
 ### 6.1b Getting in, and getting back in (Phase 7 of the new-features plan)
 
@@ -539,21 +555,12 @@ do the same on anyone's record with `employee.edit`.
   company; only `asset.manage` reaches that message, and it can already see
   that record.
   Two ways in, one behaviour: the assets card on a profile answers "what does
-  *this* person hold", and **Administration → Assets** answers "who holds what"
-  across the company. That page lists every employee — including the ones
-  holding nothing, which is the more useful half of a register — with a count
-  annotated onto the employee list itself, and fetches the assets only when a
-  row is expanded. Both routes share `AssetDialog` and the same endpoints, so
-  they cannot drift. The tab shows for `asset.manage`, which in practice means
-  Admin and Super Admin: HR holds the permission too but reaches assets through
-  each profile, because widening the Administration guard would put a one-tab
-  "Administration" entry in HR's sidebar.
-- **EmployeeDocument** — certificates and letters on a profile, all optional
-  and none of them gating anything. The employee owns the section: they attach
-  and remove their own, and HR/Admin can do the same on anyone's record with
-  `employee.edit`. Categories: 10th, 12th, bachelor's, master's, **skills
-  certification**, other educational, experience, ID proof, address proof,
-  contract, other.
+  *this* person hold", and **Issue Asset** (`/asset-management`, its own
+  sidebar item under Administration, for Admin) answers "who holds what" and
+  issues to anyone. It lists active employees with their asset count, opens the
+  same assets card under a row, and issues through the same `AssetDialog` and
+  endpoints, so the two cannot drift. HR holds `asset.manage` too but does not
+  get the sidebar item.
 
   **PDF only, checked on the bytes.** The `accept` attribute and the filename
   are courtesies — a caller posting straight at the API picks both — so the
@@ -605,7 +612,9 @@ in words using the **Indian** scale — lakh and crore, not "hundred thousand".
 
 ### 6.7 Notifications, Reports, Administration
 
-- **Notification** — in-app, with email delivered via Celery. `notify()` in
+- **Notification** — in-app, with email sent from a background thread after the
+  transaction commits (through Celery where there is a worker), so a slow mail server
+  cannot hold up an approval. `notify()` in
   `apps/notifications/services.py` is the only entry point.
 - **Reports** — no models. Four aggregate reports plus the dashboard summary and
   `upcoming.py` (birthdays and holidays).
@@ -631,7 +640,7 @@ in words using the **Indian** scale — lakh and crore, not "hundred thousand".
 | `bank.manage` / `skill.manage` | ✓ | | ✓ | | |
 | `asset.manage` | ✓ | ✓ | ✓ | | |
 | `project.view` | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `project.view_all` | ✓ | ✓ | ✓ | ✓ | |
+| `project.view_all` | ✓ | ✓ | ✓ | | |
 | `project.manage` | ✓ | ✓ | | | |
 | `project.assign_team` / `project.allocate` | ✓ | | | ✓ | |
 | `leave.apply` / `leave.view_self` | ✓ | ✓ | ✓ | ✓ | ✓ |
